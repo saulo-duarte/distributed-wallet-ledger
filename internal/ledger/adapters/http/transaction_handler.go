@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"financial-ledger/internal/ledger/application/transaction"
 	"financial-ledger/internal/ledger/domain"
@@ -17,15 +18,18 @@ const idempotencyKeyHeader = "Idempotency-Key"
 
 type TransactionHandler struct {
 	postTransaction transaction.PostTransactionUseCase
+	getTransaction  transaction.GetTransactionUseCase
 	logger          *slog.Logger
 }
 
 func NewTransactionHandler(
 	postTransaction transaction.PostTransactionUseCase,
+	getTransaction transaction.GetTransactionUseCase,
 	logger *slog.Logger,
 ) *TransactionHandler {
 	return &TransactionHandler{
 		postTransaction: postTransaction,
+		getTransaction:  getTransaction,
 		logger:          logger,
 	}
 }
@@ -51,6 +55,93 @@ type transactionResponse struct {
 	Description    string `json:"description"`
 	Currency       string `json:"currency"`
 	Status         string `json:"status"`
+}
+
+type transactionDetailsResponse struct {
+	ID           string                          `json:"id"`
+	Description  string                          `json:"description"`
+	CreatedAt    time.Time                       `json:"created_at"`
+	JournalEntry transactionJournalEntryResponse `json:"journal_entry"`
+}
+
+type transactionJournalEntryResponse struct {
+	ID       string                       `json:"id"`
+	Currency string                       `json:"currency"`
+	PostedAt time.Time                    `json:"posted_at"`
+	Postings []transactionPostingResponse `json:"postings"`
+}
+
+type transactionPostingResponse struct {
+	ID               string `json:"id"`
+	AccountID        string `json:"account_id"`
+	Direction        string `json:"direction"`
+	AmountMinorUnits int64  `json:"amount_minor_units"`
+}
+
+func (h *TransactionHandler) Get(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	transactionID, err := domain.NewTransactionID(
+		r.PathValue("transactionID"),
+	)
+	if err != nil {
+		writeApplicationError(w, err)
+		return
+	}
+
+	details, err := h.getTransaction.Execute(
+		r.Context(),
+		transactionID,
+	)
+	if err != nil {
+		if errors.Is(err, transaction.ErrTransactionNotFound) {
+			writeError(w, http.StatusNotFound, "transaction not found")
+			return
+		}
+
+		if !isClientError(err) && h.logger != nil {
+			h.logger.ErrorContext(
+				r.Context(),
+				"transaction_details_failed",
+				slog.String("operation", "transaction.get"),
+				slog.String(
+					"request_id",
+					observability.RequestIDFromContext(r.Context()),
+				),
+				slog.Any("error", err),
+			)
+		}
+
+		writeApplicationError(w, err)
+		return
+	}
+
+	postings := make(
+		[]transactionPostingResponse,
+		0,
+		len(details.JournalEntry.Postings),
+	)
+	for _, posting := range details.JournalEntry.Postings {
+		postings = append(postings, transactionPostingResponse{
+			ID:               posting.ID.String(),
+			AccountID:        posting.AccountID.String(),
+			Direction:        string(posting.Direction),
+			AmountMinorUnits: posting.AmountMinorUnits,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, transactionDetailsResponse{
+		ID:          details.ID.String(),
+		Description: details.Description,
+		CreatedAt:   details.CreatedAt,
+		JournalEntry: transactionJournalEntryResponse{
+			ID:       details.JournalEntry.ID.String(),
+			Currency: details.JournalEntry.Currency,
+			PostedAt: details.JournalEntry.PostedAt,
+			Postings: postings,
+		},
+	})
 }
 
 func (h *TransactionHandler) Post(

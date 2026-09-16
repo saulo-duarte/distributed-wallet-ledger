@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"financial-ledger/internal/ledger/application/transaction"
 	"financial-ledger/internal/ledger/domain"
@@ -17,7 +18,11 @@ func TestTransactionHandlerPostReturnsCreated(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	repository := &handlerFakeLedgerRepository{}
 	useCase := transaction.NewPostTransactionUseCase(repository)
-	handler := NewTransactionHandler(useCase, logger)
+	handler := NewTransactionHandler(
+		useCase,
+		transaction.GetTransactionUseCase{},
+		logger,
+	)
 
 	body := `{
 		"id": "transaction-001",
@@ -77,7 +82,11 @@ func TestTransactionHandlerPostRequiresIdempotencyKey(t *testing.T) {
 	useCase := transaction.NewPostTransactionUseCase(
 		&handlerFakeLedgerRepository{},
 	)
-	handler := NewTransactionHandler(useCase, nil)
+	handler := NewTransactionHandler(
+		useCase,
+		transaction.GetTransactionUseCase{},
+		nil,
+	)
 
 	request := httptest.NewRequest(
 		http.MethodPost,
@@ -97,7 +106,11 @@ func TestTransactionHandlerPostRejectsUnbalancedTransaction(t *testing.T) {
 	useCase := transaction.NewPostTransactionUseCase(
 		&handlerFakeLedgerRepository{},
 	)
-	handler := NewTransactionHandler(useCase, nil)
+	handler := NewTransactionHandler(
+		useCase,
+		transaction.GetTransactionUseCase{},
+		nil,
+	)
 
 	body := `{
 		"id": "transaction-001",
@@ -129,7 +142,11 @@ func TestNewRouterRegistersTransactionEndpoint(t *testing.T) {
 	useCase := transaction.NewPostTransactionUseCase(
 		&handlerFakeLedgerRepository{},
 	)
-	handler := NewTransactionHandler(useCase, nil)
+	handler := NewTransactionHandler(
+		useCase,
+		transaction.GetTransactionUseCase{},
+		nil,
+	)
 	router := NewRouter(
 		nil,
 		func(context.Context) error { return nil },
@@ -161,6 +178,104 @@ func TestNewRouterRegistersTransactionEndpoint(t *testing.T) {
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("unexpected status code: got %d, body: %s", recorder.Code, recorder.Body.String())
 	}
+}
+
+func TestTransactionHandlerGetReturnsTransactionDetails(t *testing.T) {
+	createdAt := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	postedAt := createdAt.Add(time.Second)
+	reader := &fakeTransactionDetailsReader{
+		details: transaction.TransactionDetails{
+			ID:          domain.TransactionID("transaction-001"),
+			Description: "Transfer",
+			CreatedAt:   createdAt,
+			JournalEntry: transaction.JournalEntryDetails{
+				ID:       domain.JournalEntryID("journal-entry-001"),
+				Currency: "BRL",
+				PostedAt: postedAt,
+				Postings: []transaction.PostingDetails{
+					{
+						ID:               domain.PostingID("posting-001"),
+						AccountID:        domain.AccountID("account-001"),
+						Direction:        domain.PostingDirectionDebit,
+						AmountMinorUnits: 10000,
+					},
+				},
+			},
+		},
+	}
+	getUseCase := transaction.NewGetTransactionUseCase(reader)
+	handler := NewTransactionHandler(
+		transaction.PostTransactionUseCase{},
+		getUseCase,
+		nil,
+	)
+	router := NewRouter(nil, func(context.Context) error { return nil }, handler, nil)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/transactions/transaction-001",
+		nil,
+	)
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: got %d, body: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response transactionDetailsResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if response.ID != "transaction-001" {
+		t.Fatalf("unexpected transaction ID: %q", response.ID)
+	}
+	if len(response.JournalEntry.Postings) != 1 {
+		t.Fatalf("unexpected posting count: %d", len(response.JournalEntry.Postings))
+	}
+	if !response.CreatedAt.Equal(createdAt) {
+		t.Fatalf("unexpected created_at: %v", response.CreatedAt)
+	}
+}
+
+func TestTransactionHandlerGetReturnsNotFound(t *testing.T) {
+	reader := &fakeTransactionDetailsReader{
+		err: transaction.ErrTransactionNotFound,
+	}
+	getUseCase := transaction.NewGetTransactionUseCase(reader)
+	handler := NewTransactionHandler(
+		transaction.PostTransactionUseCase{},
+		getUseCase,
+		nil,
+	)
+	router := NewRouter(nil, func(context.Context) error { return nil }, handler, nil)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/transactions/transaction-404",
+		nil,
+	)
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("unexpected status code: got %d", recorder.Code)
+	}
+}
+
+type fakeTransactionDetailsReader struct {
+	details transaction.TransactionDetails
+	err     error
+}
+
+func (f *fakeTransactionDetailsReader) Get(
+	context.Context,
+	domain.TransactionID,
+) (transaction.TransactionDetails, error) {
+	return f.details, f.err
 }
 
 type handlerFakeLedgerRepository struct {

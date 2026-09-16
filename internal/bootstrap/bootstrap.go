@@ -15,6 +15,7 @@ import (
 type Dependencies struct {
 	CreateAccount      account.CreateAccountUseCase
 	PostTransaction    transaction.PostTransactionUseCase
+	GetTransaction     transaction.GetTransactionUseCase
 	ListAccountEntries account.ListAccountEntriesUseCase
 
 	readiness func(context.Context) error
@@ -35,6 +36,7 @@ func New(ctx context.Context, cfg config.Config) (*Dependencies, error) {
 	return &Dependencies{
 		CreateAccount:      account.NewCreateAccountUseCase(accountRepository),
 		PostTransaction:    transaction.NewPostTransactionUseCase(transactionRepository),
+		GetTransaction:     transaction.NewGetTransactionUseCase(transactionRepository),
 		ListAccountEntries: account.NewListAccountEntriesUseCase(accountRepository),
 		readiness:          pool.Ping,
 		close:              pool.Close,

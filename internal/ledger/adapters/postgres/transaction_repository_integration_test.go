@@ -103,6 +103,33 @@ func TestTransactionRepositoryPostPersistsAllRows(t *testing.T) {
 	if len(postings) != 2 {
 		t.Fatalf("unexpected posting count: got %d, want 2", len(postings))
 	}
+
+	details, err := repository.Get(
+		context.Background(),
+		postedTransaction.ID(),
+	)
+	if err != nil {
+		t.Fatalf("get transaction details: %v", err)
+	}
+
+	if details.ID != postedTransaction.ID() {
+		t.Fatalf("unexpected transaction details ID: %q", details.ID)
+	}
+	if details.Description != postedTransaction.Description() {
+		t.Fatalf("unexpected transaction details description: %q", details.Description)
+	}
+	if details.CreatedAt.IsZero() {
+		t.Fatal("expected transaction created_at")
+	}
+	if details.JournalEntry.PostedAt.IsZero() {
+		t.Fatal("expected journal entry posted_at")
+	}
+	if len(details.JournalEntry.Postings) != 2 {
+		t.Fatalf(
+			"unexpected transaction detail postings: got %d, want 2",
+			len(details.JournalEntry.Postings),
+		)
+	}
 }
 
 func TestTransactionRepositoryPostRollsBackWhenPostingFails(t *testing.T) {

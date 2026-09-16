@@ -2,12 +2,14 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	db "financial-ledger/internal/ledger/adapters/postgres/generated"
 	"financial-ledger/internal/ledger/application/transaction"
 	"financial-ledger/internal/ledger/domain"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -30,6 +32,7 @@ func NewTransactionRepository(
 }
 
 var _ transaction.LedgerRepository = (*TransactionRepository)(nil)
+var _ transaction.TransactionReader = (*TransactionRepository)(nil)
 
 func (r *TransactionRepository) Post(
 	ctx context.Context,
@@ -125,6 +128,66 @@ func (r *TransactionRepository) Post(
 	}
 
 	return nil
+}
+
+func (r *TransactionRepository) Get(
+	ctx context.Context,
+	id domain.TransactionID,
+) (transaction.TransactionDetails, error) {
+	if r == nil || r.queries == nil {
+		return transaction.TransactionDetails{}, fmt.Errorf(
+			"transaction repository is not configured",
+		)
+	}
+
+	databaseID, err := transactionIDToUUID(id)
+	if err != nil {
+		return transaction.TransactionDetails{}, err
+	}
+
+	rows, err := r.queries.GetTransactionDetails(ctx, databaseID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return transaction.TransactionDetails{}, transaction.ErrTransactionNotFound
+		}
+		return transaction.TransactionDetails{}, fmt.Errorf(
+			"get transaction details: %w",
+			err,
+		)
+	}
+
+	first := rows[0]
+	if !first.TransactionCreatedAt.Valid || !first.PostedAt.Valid {
+		return transaction.TransactionDetails{}, fmt.Errorf(
+			"transaction timestamps are invalid",
+		)
+	}
+
+	details := transaction.TransactionDetails{
+		ID:          domain.TransactionID(first.TransactionID.String()),
+		Description: first.Description,
+		CreatedAt:   first.TransactionCreatedAt.Time.UTC(),
+		JournalEntry: transaction.JournalEntryDetails{
+			ID:       domain.JournalEntryID(first.JournalEntryID.String()),
+			Currency: first.Currency,
+			PostedAt: first.PostedAt.Time.UTC(),
+			Postings: make([]transaction.PostingDetails, 0, len(rows)),
+		},
+	}
+
+	for _, row := range rows {
+		details.JournalEntry.Postings = append(
+			details.JournalEntry.Postings,
+			transaction.PostingDetails{
+				ID:               domain.PostingID(row.PostingID.String()),
+				AccountID:        domain.AccountID(row.AccountID.String()),
+				Direction:        domain.PostingDirection(row.Direction),
+				AmountMinorUnits: row.AmountMinorUnits,
+			},
+		)
+	}
+
+	return details, nil
 }
 
 func transactionIDToUUID(id domain.TransactionID) (pgtype.UUID, error) {

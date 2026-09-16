@@ -6,6 +6,7 @@ package db
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -152,4 +153,76 @@ func (q *Queries) ListAccountEntriesAfter(
 	}
 
 	return entries, nil
+}
+
+type TransactionDetailsRow struct {
+	TransactionID        pgtype.UUID
+	Description          string
+	TransactionCreatedAt pgtype.Timestamptz
+	JournalEntryID       pgtype.UUID
+	Currency             string
+	PostedAt             pgtype.Timestamptz
+	PostingID            pgtype.UUID
+	AccountID            pgtype.UUID
+	Direction            string
+	AmountMinorUnits     int64
+}
+
+const getTransactionDetails = `
+SELECT
+    t.id AS transaction_id,
+    t.description,
+    t.created_at AS transaction_created_at,
+    j.id AS journal_entry_id,
+    j.currency,
+    j.posted_at,
+    p.id AS posting_id,
+    p.account_id,
+    p.direction,
+    p.amount_minor_units
+FROM transactions AS t
+JOIN journal_entries AS j ON j.transaction_id = t.id
+JOIN postings AS p ON p.journal_entry_id = j.id
+WHERE t.id = $1
+ORDER BY p.id
+`
+
+func (q *Queries) GetTransactionDetails(
+	ctx context.Context,
+	id pgtype.UUID,
+) ([]TransactionDetailsRow, error) {
+	rows, err := q.db.Query(ctx, getTransactionDetails, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]TransactionDetailsRow, 0)
+	for rows.Next() {
+		var item TransactionDetailsRow
+		if err := rows.Scan(
+			&item.TransactionID,
+			&item.Description,
+			&item.TransactionCreatedAt,
+			&item.JournalEntryID,
+			&item.Currency,
+			&item.PostedAt,
+			&item.PostingID,
+			&item.AccountID,
+			&item.Direction,
+			&item.AmountMinorUnits,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, pgx.ErrNoRows
+	}
+
+	return items, nil
 }

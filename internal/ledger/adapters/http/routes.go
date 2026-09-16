@@ -21,6 +21,7 @@ func NewRouter(
 
 	if transactionHandler != nil {
 		mux.HandleFunc("POST /transactions", transactionHandler.Post)
+		mux.HandleFunc("GET /transactions/{transactionID}", transactionHandler.Get)
 	}
 	if accountEntriesHandler != nil {
 		mux.HandleFunc(

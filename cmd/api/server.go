@@ -49,6 +49,7 @@ func run(ctx context.Context) error {
 	)
 	transactionHandler := httpadapter.NewTransactionHandler(
 		dependencies.PostTransaction,
+		dependencies.GetTransaction,
 		logger,
 	)
 	accountEntriesHandler := httpadapter.NewAccountEntriesHandler(
