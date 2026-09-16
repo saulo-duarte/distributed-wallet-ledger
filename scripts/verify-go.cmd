@@ -1,0 +1,9 @@
+@echo off
+setlocal
+if not exist "%~dp0..\.cache\go" mkdir "%~dp0..\.cache\go"
+set "GOCACHE=%~dp0..\.cache\go"
+go test ./...
+if errorlevel 1 exit /b 1
+go vet ./...
+if errorlevel 1 exit /b 1
+go build ./...
