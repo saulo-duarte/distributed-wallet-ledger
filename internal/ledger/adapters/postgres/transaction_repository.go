@@ -33,6 +33,7 @@ func NewTransactionRepository(
 
 var _ transaction.LedgerRepository = (*TransactionRepository)(nil)
 var _ transaction.TransactionReader = (*TransactionRepository)(nil)
+var _ transaction.TransactionAggregateReader = (*TransactionRepository)(nil)
 
 func (r *TransactionRepository) Post(
 	ctx context.Context,
@@ -59,11 +60,20 @@ func (r *TransactionRepository) Post(
 		return err
 	}
 
+	var reversesTransactionID pgtype.UUID
+	if originalTransactionID := postedTransaction.ReversesTransactionID(); originalTransactionID != nil {
+		reversesTransactionID, err = transactionIDToUUID(*originalTransactionID)
+		if err != nil {
+			return err
+		}
+	}
+
 	if err := queries.CreateTransaction(
 		ctx,
 		db.CreateTransactionParams{
-			ID:          transactionID,
-			Description: postedTransaction.Description(),
+			ID:                    transactionID,
+			Description:           postedTransaction.Description(),
+			ReversesTransactionID: reversesTransactionID,
 		},
 	); err != nil {
 		return fmt.Errorf("create transaction: %w", err)
@@ -155,6 +165,9 @@ func (r *TransactionRepository) Get(
 			err,
 		)
 	}
+	if len(rows) == 0 {
+		return transaction.TransactionDetails{}, transaction.ErrTransactionNotFound
+	}
 
 	first := rows[0]
 	if !first.TransactionCreatedAt.Valid || !first.PostedAt.Valid {
@@ -188,6 +201,131 @@ func (r *TransactionRepository) Get(
 	}
 
 	return details, nil
+}
+
+func (r *TransactionRepository) GetAggregate(
+	ctx context.Context,
+	id domain.TransactionID,
+) (domain.Transaction, error) {
+	if r == nil || r.queries == nil {
+		return domain.Transaction{}, fmt.Errorf(
+			"transaction repository is not configured",
+		)
+	}
+
+	databaseID, err := transactionIDToUUID(id)
+	if err != nil {
+		return domain.Transaction{}, err
+	}
+
+	rows, err := r.queries.GetTransactionDetails(ctx, databaseID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Transaction{}, transaction.ErrTransactionNotFound
+		}
+
+		return domain.Transaction{}, fmt.Errorf(
+			"get transaction aggregate: %w",
+			err,
+		)
+	}
+	if len(rows) == 0 {
+		return domain.Transaction{}, transaction.ErrTransactionNotFound
+	}
+
+	first := rows[0]
+
+	transactionID, err := domain.NewTransactionID(
+		first.TransactionID.String(),
+	)
+	if err != nil {
+		return domain.Transaction{}, err
+	}
+
+	journalEntryID, err := domain.NewJournalEntryID(
+		first.JournalEntryID.String(),
+	)
+	if err != nil {
+		return domain.Transaction{}, err
+	}
+
+	currency, err := domain.NewCurrency(first.Currency)
+	if err != nil {
+		return domain.Transaction{}, err
+	}
+
+	postings := make([]domain.Posting, 0, len(rows))
+
+	for _, row := range rows {
+		postingID, err := domain.NewPostingID(
+			row.PostingID.String(),
+		)
+		if err != nil {
+			return domain.Transaction{}, err
+		}
+
+		accountID, err := domain.NewAccountID(
+			row.AccountID.String(),
+		)
+		if err != nil {
+			return domain.Transaction{}, err
+		}
+
+		amount, err := domain.NewMoney(
+			currency,
+			row.AmountMinorUnits,
+		)
+		if err != nil {
+			return domain.Transaction{}, err
+		}
+
+		posting, err := domain.NewPosting(
+			postingID,
+			accountID,
+			domain.PostingDirection(row.Direction),
+			amount,
+		)
+		if err != nil {
+			return domain.Transaction{}, err
+		}
+
+		postings = append(postings, posting)
+	}
+
+	journalEntry, err := domain.NewJournalEntry(
+		journalEntryID,
+		transactionID,
+		currency,
+		postings,
+	)
+	if err != nil {
+		return domain.Transaction{}, err
+	}
+
+	var reversesTransactionID *domain.TransactionID
+
+	if first.ReversesTransactionID.Valid {
+		reversalID, err := domain.NewTransactionID(
+			first.ReversesTransactionID.String(),
+		)
+		if err != nil {
+			return domain.Transaction{}, err
+		}
+
+		reversesTransactionID = &reversalID
+	}
+
+	reconstructedTransaction, err := domain.ReconstituteTransaction(
+		transactionID,
+		first.Description,
+		journalEntry,
+		reversesTransactionID,
+	)
+	if err != nil {
+		return domain.Transaction{}, err
+	}
+
+	return reconstructedTransaction, nil
 }
 
 func transactionIDToUUID(id domain.TransactionID) (pgtype.UUID, error) {

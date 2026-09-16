@@ -32,10 +32,12 @@ func TestTransactionRepositoryPostPersistsAllRows(t *testing.T) {
 	)
 
 	accountRepository := NewAccountRepository(queries)
+	cleanupLedgerTransaction(t, pool, "0198f3b2-7f0a-7ac3-8def-123456789ac3")
 	cleanupLedgerTransaction(t, pool, "0198f3b2-7f0a-7ac2-8def-123456789ac2")
 	cleanupAccount(t, pool, debitAccount.Code())
 	cleanupAccount(t, pool, creditAccount.Code())
 	t.Cleanup(func() {
+		cleanupLedgerTransaction(t, pool, "0198f3b2-7f0a-7ac3-8def-123456789ac3")
 		cleanupLedgerTransaction(t, pool, "0198f3b2-7f0a-7ac2-8def-123456789ac2")
 		cleanupAccount(t, pool, debitAccount.Code())
 		cleanupAccount(t, pool, creditAccount.Code())
@@ -128,6 +130,77 @@ func TestTransactionRepositoryPostPersistsAllRows(t *testing.T) {
 		t.Fatalf(
 			"unexpected transaction detail postings: got %d, want 2",
 			len(details.JournalEntry.Postings),
+		)
+	}
+
+	aggregate, err := repository.GetAggregate(
+		context.Background(),
+		postedTransaction.ID(),
+	)
+	if err != nil {
+		t.Fatalf("get transaction aggregate: %v", err)
+	}
+
+	if aggregate.ID() != postedTransaction.ID() {
+		t.Fatalf("unexpected aggregate ID: %q", aggregate.ID())
+	}
+	if aggregate.Description() != postedTransaction.Description() {
+		t.Fatalf(
+			"unexpected aggregate description: %q",
+			aggregate.Description(),
+		)
+	}
+	if aggregate.IsReversal() {
+		t.Fatal("expected original transaction not to be a reversal")
+	}
+	if len(aggregate.JournalEntry().Postings()) != 2 {
+		t.Fatalf(
+			"unexpected aggregate posting count: got %d, want 2",
+			len(aggregate.JournalEntry().Postings()),
+		)
+	}
+
+	reversal, err := postedTransaction.Reverse(
+		domain.TransactionID("0198f3b2-7f0a-7ac3-8def-123456789ac3"),
+		domain.JournalEntryID("0198f3b2-7f0a-7ac4-8def-123456789ac4"),
+		[]domain.PostingID{
+			domain.PostingID("0198f3b2-7f0a-7ac5-8def-123456789ac5"),
+			domain.PostingID("0198f3b2-7f0a-7ac6-8def-123456789ac6"),
+		},
+		"Reversal of integration transaction",
+	)
+	if err != nil {
+		t.Fatalf("create reversal: %v", err)
+	}
+
+	if err := repository.Post(
+		context.Background(),
+		reversal,
+		"integration-reversal-001",
+		"integration-reversal-hash-001",
+	); err != nil {
+		t.Fatalf("post reversal: %v", err)
+	}
+
+	reconstitutedReversal, err := repository.GetAggregate(
+		context.Background(),
+		reversal.ID(),
+	)
+	if err != nil {
+		t.Fatalf("get reversal aggregate: %v", err)
+	}
+
+	if !reconstitutedReversal.IsReversal() {
+		t.Fatal("expected reconstituted transaction to be a reversal")
+	}
+	if reconstitutedReversal.ReversesTransactionID() == nil {
+		t.Fatal("expected reversal to reference original transaction")
+	}
+	if *reconstitutedReversal.ReversesTransactionID() != postedTransaction.ID() {
+		t.Fatalf(
+			"unexpected reversed transaction ID: got %q, want %q",
+			reconstitutedReversal.ReversesTransactionID(),
+			postedTransaction.ID(),
 		)
 	}
 }

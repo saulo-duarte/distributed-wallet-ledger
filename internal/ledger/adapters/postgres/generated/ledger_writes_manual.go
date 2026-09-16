@@ -10,20 +10,27 @@ import (
 )
 
 const createTransaction = `
-INSERT INTO transactions (id, description)
-VALUES ($1, $2)
+INSERT INTO transactions (id, description, reverses_transaction_id)
+VALUES ($1, $2, $3)
 `
 
 type CreateTransactionParams struct {
-	ID          pgtype.UUID `json:"id"`
-	Description string      `json:"description"`
+	ID                    pgtype.UUID `json:"id"`
+	Description           string      `json:"description"`
+	ReversesTransactionID pgtype.UUID `json:"reverses_transaction_id"`
 }
 
 func (q *Queries) CreateTransaction(
 	ctx context.Context,
 	arg CreateTransactionParams,
 ) error {
-	_, err := q.db.Exec(ctx, createTransaction, arg.ID, arg.Description)
+	_, err := q.db.Exec(
+		ctx,
+		createTransaction,
+		arg.ID,
+		arg.Description,
+		arg.ReversesTransactionID,
+	)
 	return err
 }
 

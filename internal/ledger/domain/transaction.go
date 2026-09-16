@@ -28,6 +28,36 @@ func NewTransaction(
 	return tx, nil
 }
 
+// ReconstituteTransaction rebuilds a transaction that was already persisted.
+// Persistence adapters use this function to restore state without exposing
+// the aggregate's internal fields outside the domain package.
+func ReconstituteTransaction(
+	id TransactionID,
+	description string,
+	journalEntry JournalEntry,
+	reversesTransactionID *TransactionID,
+) (Transaction, error) {
+	var reversalIDCopy *TransactionID
+
+	if reversesTransactionID != nil {
+		copy := *reversesTransactionID
+		reversalIDCopy = &copy
+	}
+
+	tx := Transaction{
+		id:                    id,
+		description:           strings.TrimSpace(description),
+		journalEntry:          journalEntry,
+		reversesTransactionID: reversalIDCopy,
+	}
+
+	if err := tx.Validate(); err != nil {
+		return Transaction{}, err
+	}
+
+	return tx, nil
+}
+
 func (t Transaction) ID() TransactionID {
 	return t.id
 }

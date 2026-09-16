@@ -156,22 +156,24 @@ func (q *Queries) ListAccountEntriesAfter(
 }
 
 type TransactionDetailsRow struct {
-	TransactionID        pgtype.UUID
-	Description          string
-	TransactionCreatedAt pgtype.Timestamptz
-	JournalEntryID       pgtype.UUID
-	Currency             string
-	PostedAt             pgtype.Timestamptz
-	PostingID            pgtype.UUID
-	AccountID            pgtype.UUID
-	Direction            string
-	AmountMinorUnits     int64
+	TransactionID         pgtype.UUID
+	Description           string
+	ReversesTransactionID pgtype.UUID
+	TransactionCreatedAt  pgtype.Timestamptz
+	JournalEntryID        pgtype.UUID
+	Currency              string
+	PostedAt              pgtype.Timestamptz
+	PostingID             pgtype.UUID
+	AccountID             pgtype.UUID
+	Direction             string
+	AmountMinorUnits      int64
 }
 
 const getTransactionDetails = `
 SELECT
     t.id AS transaction_id,
     t.description,
+    t.reverses_transaction_id,
     t.created_at AS transaction_created_at,
     j.id AS journal_entry_id,
     j.currency,
@@ -203,6 +205,7 @@ func (q *Queries) GetTransactionDetails(
 		if err := rows.Scan(
 			&item.TransactionID,
 			&item.Description,
+			&item.ReversesTransactionID,
 			&item.TransactionCreatedAt,
 			&item.JournalEntryID,
 			&item.Currency,

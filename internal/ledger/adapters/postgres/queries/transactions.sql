@@ -1,6 +1,6 @@
 -- name: CreateTransaction :exec
-INSERT INTO transactions (id, description)
-VALUES ($1, $2);
+INSERT INTO transactions (id, description, reverses_transaction_id)
+VALUES ($1, $2, $3);
 
 -- name: GetTransaction :one
 SELECT *
@@ -17,6 +17,7 @@ WHERE i.scope = $1 AND i.idempotency_key = $2;
 SELECT
     t.id AS transaction_id,
     t.description,
+    t.reverses_transaction_id,
     t.created_at AS transaction_created_at,
     j.id AS journal_entry_id,
     j.currency,
