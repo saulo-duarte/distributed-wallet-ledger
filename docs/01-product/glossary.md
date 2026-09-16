@@ -48,4 +48,20 @@ A new compensating transaction that offsets an earlier posted transaction. Finan
 
 The authoritative system from which financial state can be reconstructed and against which other representations are compared.
 
+## External Account Reference
+
+Information used to identify an account or beneficiary at another financial institution. It is not a local Ledger `Account` and does not give our system authority over the external institution's balance.
+
+## Clearing Account
+
+A local Ledger account used to represent funds in transit, receivables, payables, or obligations related to an external operation. It helps keep local accounting balanced while an external operation is pending.
+
+## Payment Instruction
+
+An operational request sent to a payment rail, provider, or settlement operator. It contains the external destination and the amount to process, but it is not itself a Journal Entry.
+
+## External Operational Status
+
+The lifecycle of an external payment instruction, such as `pending`, `submitted`, `settled`, `failed`, or `rejected`. This status is separate from the immutable financial facts recorded in the Ledger.
+
 Future terms such as authorization, hold, capture, settlement, clearing, reconciliation, and chargeback will be added when those concepts enter the implemented scope.

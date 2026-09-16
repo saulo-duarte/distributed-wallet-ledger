@@ -24,6 +24,25 @@ An immutable ledger is not automatically event sourcing. The ledger is modeled a
 
 For a R$100 transfer, the application creates a journal entry with positive amounts expressed as 10,000 minor units. The posting direction identifies debit or credit. The entry is accepted only when the total debits equal the total credits and all participating accounts/currencies are valid.
 
+## Internal accounts and external payment destinations
+
+The Ledger is the source of truth for financial facts controlled by our institution. An `Account` in this domain represents an account inside our Ledger, such as a customer wallet, clearing account, fees account, reserve, or settlement account.
+
+An account held at another institution MUST NOT be modeled as a local `Account` merely because it is the destination of a payment. We do not own the external institution's balance or internal state. A future payment boundary may store an external account reference and create a payment instruction, but the local accounting postings still use local clearing or settlement accounts.
+
+For example, an outbound external payment may first be represented locally as:
+
+```text
+Debit  CUSTOMER_WALLET    BRL 100.00
+Credit EXTERNAL_CLEARING  BRL 100.00
+```
+
+The external destination is associated with a separate payment instruction. A payment rail, provider, or authorized settlement operator may later accept, reject, or settle that instruction. This integration result is operational state; it is not a replacement for, or mutation of, the original journal entry.
+
+If the external operation fails after the local posting, the correction is another balanced compensating entry. If the business must wait for authorization before moving funds, a future wallet or workflow model may introduce holds and capture instead of posting the final movement immediately.
+
+This external payment flow is planned for later phases. Phase 1 models only local Ledger accounts and does not implement providers, queues, settlement, or reconciliation.
+
 ## Money representation
 
 The domain should introduce a small `Money` value object when implementation begins. It should keep a positive integer amount in minor units together with a currency and expose operations that preserve currency and overflow rules. PostgreSQL stores the amount as `BIGINT` and the currency on the journal entry; adapters map between database rows and domain values. This keeps financial code safer than passing a naked `int64` everywhere while avoiding decimal or floating-point arithmetic.

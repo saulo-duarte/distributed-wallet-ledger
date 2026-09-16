@@ -23,3 +23,4 @@ Use `Proposed` while a decision is being evaluated, `Accepted` once it guides im
 ## Index
 
 - [0001 — PostgreSQL as Ledger Source of Truth](0001-postgresql-as-ledger-source-of-truth.md)
+- [0002 — External Accounts Are Not Local Ledger Accounts](0002-external-accounts-are-not-local-ledger-accounts.md)

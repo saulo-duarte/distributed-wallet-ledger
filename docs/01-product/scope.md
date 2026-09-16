@@ -15,6 +15,8 @@
 - Reversal through compensating ledger entries.
 - Initial, database-backed idempotency.
 
+Phase 1 treats all posting account references as local Ledger accounts. External account references, payment instructions, provider responses, settlement, and reconciliation are conceptual only and are not implemented.
+
 ## Phase 1 does not include
 
 - DynamoDB or a distributed CQRS read model.
@@ -24,5 +26,6 @@
 - Circuit breakers or cross-service resilience policies.
 - Risk, notification, settlement, or other distributed services.
 - Full event sourcing.
+- External payment providers, payment rails, asynchronous provider status, and inter-institution settlement.
 
 Future technologies may appear in the roadmap as planned study topics. Their inclusion is not a current implementation decision.
