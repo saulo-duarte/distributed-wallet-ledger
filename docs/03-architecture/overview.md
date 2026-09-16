@@ -13,6 +13,18 @@ flowchart TD
     SQLC --> DB[(PostgreSQL)]
 ```
 
+The application is assembled by a composition root:
+
+```mermaid
+flowchart LR
+    Env[.env / environment] --> Config[Platform config]
+    Config --> Bootstrap[Bootstrap]
+    Bootstrap --> Pool[PostgreSQL pool]
+    Bootstrap --> Queries[SQLC queries]
+    Bootstrap --> Repository[Account repository]
+    Bootstrap --> UseCase[Account use case]
+```
+
 ## Dependency direction
 
 Dependencies point inward:
@@ -24,7 +36,9 @@ Adapters -> Application -> Domain
 - `internal/ledger/domain` contains rules and value concepts. It MUST NOT import PostgreSQL, SQLC, HTTP, AWS, or frameworks.
 - `internal/ledger/application` coordinates use cases. It owns an outbound port only when a use case needs one, such as a repository boundary.
 - `internal/ledger/adapters` translates external protocols and persistence representations. PostgreSQL-specific code and SQLC-generated code stay here.
-- `cmd/api` composes concrete adapters and the HTTP boundary. The HTTP server is only a compileable scaffold at this stage.
+- `internal/platform/config` loads environment-backed configuration. It has no SSM integration yet.
+- `internal/bootstrap` composes concrete adapters and application use cases.
+- `cmd/api` owns process startup and will own the HTTP boundary when it is implemented.
 
 ## Package-by-feature layout
 
@@ -36,6 +50,7 @@ The ledger owns its domain, application, and adapters under one feature boundary
 - `internal/ledger/adapters/postgres/queries/` contains handwritten SQLC queries.
 - `internal/ledger/adapters/postgres/generated/` contains generated database access code.
 - Domain types must not be aliases of generated database records; adapters map between them.
+- Migrations are executed explicitly by local infrastructure commands, not by API startup.
 
 ## Deliberately deferred
 

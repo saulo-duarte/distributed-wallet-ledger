@@ -41,6 +41,8 @@ flowchart LR
 
 PostgreSQL is the source of truth in Phase 1. There is no distributed messaging, read-model database, or microservice split yet.
 
+The current composition root loads local configuration, opens the PostgreSQL pool, creates the SQLC queries, and wires the account repository into the application use case. HTTP handlers are not implemented yet.
+
 ## Technology Stack
 
 - Go 1.25+
@@ -54,7 +56,7 @@ PostgreSQL is the source of truth in Phase 1. There is no distributed messaging,
 
 **Phase 1 — Ledger Core**
 
-This setup prepares the repository and database boundary. The ledger use cases and domain rules will be implemented in the next step; they are not implemented by this scaffold.
+The domain model and the first account creation use case are implemented. PostgreSQL persistence, local migrations, and the first integration tests are being connected incrementally.
 
 ## Roadmap
 
@@ -76,12 +78,20 @@ Prerequisites: Go, Docker Compose, `sqlc`, and the `golang-migrate` CLI.
 
 ```sh
 copy .env.example .env
-make compose-up
+make infra-up
 make migrate-up
 make test
 ```
 
-The database runs on `localhost:5432`. The API command is currently a compileable scaffold only.
+The database runs on `localhost:5432`. To run the real PostgreSQL integration suite, use:
+
+```sh
+make test-integration
+```
+
+This starts PostgreSQL, waits for its healthcheck, applies migrations, and runs tests with the `integration` build tag. The `migrate` CLI must be available on `PATH`.
+
+The API command currently initializes configuration and dependency injection, then exits because the HTTP server has not been implemented yet.
 
 Useful commands are documented in the [local development guide](docs/README.md).
 
@@ -92,6 +102,8 @@ cmd/                         application entrypoints
 internal/ledger/domain/      pure domain model and invariants
 internal/ledger/application/ use-case orchestration and ports
 internal/ledger/adapters/    external adapters, including PostgreSQL
+internal/platform/config/    environment-backed application configuration
+internal/bootstrap/          composition root for dependency injection
 migrations/                  versioned database migrations
 scripts/                     local development helpers
 docs/                        durable product, domain, architecture, and ADR docs
@@ -110,7 +122,7 @@ Architecture decisions are recorded in [docs/adr](docs/adr/README.md). Future te
 
 ## Testing
 
-Domain unit tests will run without infrastructure. Integration tests will use a real PostgreSQL instance, eventually through Testcontainers or an equivalent isolated strategy. PostgreSQL will not be mocked in integration tests.
+Domain and configuration unit tests run without infrastructure. Integration tests use the real PostgreSQL instance managed by Docker Compose and are isolated behind the `integration` build tag. PostgreSQL is not mocked in integration tests.
 
 ## Disclaimer
 

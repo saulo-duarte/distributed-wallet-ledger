@@ -1,7 +1,22 @@
 package main
 
-import "fmt"
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+)
 
 func main() {
-	fmt.Println("financial-ledger API scaffold: Phase 1 implementation pending")
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	if err := run(ctx); err != nil {
+		log.Fatal(err)
+	}
 }
