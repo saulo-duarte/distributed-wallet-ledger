@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"financial-ledger/internal/platform/httpx"
 )
 
 const readinessTimeout = 2 * time.Second
@@ -21,7 +23,7 @@ func NewHealthHandler(
 }
 
 func (h *HealthHandler) Live(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(
+	httpx.WriteJSON(
 		w,
 		http.StatusOK,
 		healthResponse{Status: "ok"},
@@ -30,7 +32,7 @@ func (h *HealthHandler) Live(w http.ResponseWriter, _ *http.Request) {
 
 func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	if h.readinessChecker == nil {
-		writeJSON(
+		httpx.WriteJSON(
 			w,
 			http.StatusServiceUnavailable,
 			healthResponse{Status: "not_ready"},
@@ -42,7 +44,7 @@ func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := h.readinessChecker(ctx); err != nil {
-		writeJSON(
+		httpx.WriteJSON(
 			w,
 			http.StatusServiceUnavailable,
 			healthResponse{Status: "not_ready"},
@@ -50,7 +52,7 @@ func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(
+	httpx.WriteJSON(
 		w,
 		http.StatusOK,
 		healthResponse{Status: "ready"},

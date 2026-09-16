@@ -11,7 +11,10 @@ import (
 
 	"financial-ledger/internal/ledger/application/account"
 	"financial-ledger/internal/ledger/domain"
+	"financial-ledger/internal/platform/httpx"
 	"financial-ledger/internal/platform/observability"
+
+	"github.com/go-chi/chi/v5"
 )
 
 const (
@@ -54,15 +57,23 @@ func (h *AccountEntriesHandler) List(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-	accountID, err := domain.NewAccountID(r.PathValue("accountID"))
+	accountID, err := domain.NewAccountID(
+		chi.URLParam(r, "accountID"),
+	)
 	if err != nil {
-		writeApplicationError(w, err)
+		writeApplicationError(w, r, err)
 		return
 	}
 
 	limit, err := parseAccountEntriesLimit(r.URL.Query().Get(accountEntriesLimitQuery))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeHTTPError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"invalid_page_size",
+			err.Error(),
+		)
 		return
 	}
 
@@ -70,7 +81,13 @@ func (h *AccountEntriesHandler) List(
 		r.URL.Query().Get(accountEntriesCursorQuery),
 	)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid cursor")
+		writeHTTPError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"invalid_cursor",
+			"invalid cursor",
+		)
 		return
 	}
 
@@ -96,7 +113,7 @@ func (h *AccountEntriesHandler) List(
 			)
 		}
 
-		writeApplicationError(w, err)
+		writeApplicationError(w, r, err)
 		return
 	}
 
@@ -120,12 +137,12 @@ func (h *AccountEntriesHandler) List(
 	if page.NextCursor != nil {
 		response.NextCursor, err = encodeAccountEntriesCursor(*page.NextCursor)
 		if err != nil {
-			writeApplicationError(w, err)
+			writeApplicationError(w, r, err)
 			return
 		}
 	}
 
-	writeJSON(w, http.StatusOK, response)
+	httpx.WriteJSON(w, http.StatusOK, response)
 }
 
 func parseAccountEntriesLimit(value string) (int, error) {

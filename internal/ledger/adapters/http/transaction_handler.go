@@ -11,7 +11,10 @@ import (
 
 	"financial-ledger/internal/ledger/application/transaction"
 	"financial-ledger/internal/ledger/domain"
+	"financial-ledger/internal/platform/httpx"
 	"financial-ledger/internal/platform/observability"
+
+	"github.com/go-chi/chi/v5"
 )
 
 const idempotencyKeyHeader = "Idempotency-Key"
@@ -83,10 +86,10 @@ func (h *TransactionHandler) Get(
 	r *http.Request,
 ) {
 	transactionID, err := domain.NewTransactionID(
-		r.PathValue("transactionID"),
+		chi.URLParam(r, "transactionID"),
 	)
 	if err != nil {
-		writeApplicationError(w, err)
+		writeApplicationError(w, r, err)
 		return
 	}
 
@@ -95,11 +98,6 @@ func (h *TransactionHandler) Get(
 		transactionID,
 	)
 	if err != nil {
-		if errors.Is(err, transaction.ErrTransactionNotFound) {
-			writeError(w, http.StatusNotFound, "transaction not found")
-			return
-		}
-
 		if !isClientError(err) && h.logger != nil {
 			h.logger.ErrorContext(
 				r.Context(),
@@ -113,7 +111,7 @@ func (h *TransactionHandler) Get(
 			)
 		}
 
-		writeApplicationError(w, err)
+		writeApplicationError(w, r, err)
 		return
 	}
 
@@ -131,7 +129,7 @@ func (h *TransactionHandler) Get(
 		})
 	}
 
-	writeJSON(w, http.StatusOK, transactionDetailsResponse{
+	httpx.WriteJSON(w, http.StatusOK, transactionDetailsResponse{
 		ID:          details.ID.String(),
 		Description: details.Description,
 		CreatedAt:   details.CreatedAt,
@@ -149,45 +147,50 @@ func (h *TransactionHandler) Post(
 	r *http.Request,
 ) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeHTTPError(
+			w,
+			r,
+			http.StatusMethodNotAllowed,
+			"method_not_allowed",
+			"method not allowed",
+		)
 		return
 	}
 
 	idempotencyKey := r.Header.Get(idempotencyKeyHeader)
 	if idempotencyKey == "" {
-		writeError(
+		writeHTTPError(
 			w,
+			r,
 			http.StatusBadRequest,
+			"empty_idempotency_key",
 			transaction.ErrEmptyIdempotencyKey.Error(),
 		)
 		return
 	}
 
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(
-		http.MaxBytesReader(w, r.Body, maxRequestBodySize),
-	)
-	decoder.DisallowUnknownFields()
-
 	var request postTransactionRequest
-	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		code := "invalid_request"
+		message := "invalid request body"
+		if errors.Is(err, httpx.ErrMultipleJSONValues) {
+			code = "multiple_json_values"
+			message = err.Error()
+		}
 
-	if err := ensureSingleJSONValue(decoder); err != nil {
-		writeError(
+		writeHTTPError(
 			w,
+			r,
 			http.StatusBadRequest,
-			"request body must contain only one JSON object",
+			code,
+			message,
 		)
 		return
 	}
 
 	command, err := buildPostTransactionCommand(request, idempotencyKey)
 	if err != nil {
-		writeApplicationError(w, err)
+		writeApplicationError(w, r, err)
 		return
 	}
 
@@ -209,7 +212,7 @@ func (h *TransactionHandler) Post(
 			)
 		}
 
-		writeApplicationError(w, err)
+		writeApplicationError(w, r, err)
 		return
 	}
 
@@ -226,7 +229,7 @@ func (h *TransactionHandler) Post(
 		)
 	}
 
-	writeJSON(
+	httpx.WriteJSON(
 		w,
 		http.StatusCreated,
 		transactionResponse{

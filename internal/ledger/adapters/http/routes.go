@@ -3,6 +3,8 @@ package httpadapter
 import (
 	"context"
 	"net/http"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func NewRouter(
@@ -10,25 +12,29 @@ func NewRouter(
 	readinessChecker func(context.Context) error,
 	transactionHandler *TransactionHandler,
 	accountEntriesHandler *AccountEntriesHandler,
+	reversalHandlers ...*ReversalHandler,
 ) http.Handler {
-	mux := http.NewServeMux()
+	router := chi.NewRouter()
 	healthHandler := NewHealthHandler(readinessChecker)
 
-	mux.HandleFunc("GET /health", healthHandler.Live)
-	mux.HandleFunc("GET /health/live", healthHandler.Live)
-	mux.HandleFunc("GET /health/ready", healthHandler.Ready)
-	mux.HandleFunc("POST /accounts", accountHandler.Create)
+	router.Get("/health", healthHandler.Live)
+	router.Get("/health/live", healthHandler.Live)
+	router.Get("/health/ready", healthHandler.Ready)
+	router.Post("/accounts", accountHandler.Create)
 
 	if transactionHandler != nil {
-		mux.HandleFunc("POST /transactions", transactionHandler.Post)
-		mux.HandleFunc("GET /transactions/{transactionID}", transactionHandler.Get)
+		router.Post("/transactions", transactionHandler.Post)
+		router.Get("/transactions/{transactionID}", transactionHandler.Get)
 	}
 	if accountEntriesHandler != nil {
-		mux.HandleFunc(
-			"GET /accounts/{accountID}/entries",
-			accountEntriesHandler.List,
+		router.Get("/accounts/{accountID}/entries", accountEntriesHandler.List)
+	}
+	if len(reversalHandlers) > 0 && reversalHandlers[0] != nil {
+		router.Post(
+			"/transactions/{transactionID}/reversal",
+			reversalHandlers[0].Reverse,
 		)
 	}
 
-	return mux
+	return router
 }

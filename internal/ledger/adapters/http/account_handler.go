@@ -1,18 +1,14 @@
 package httpadapter
 
 import (
-	"encoding/json"
-	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 
 	"financial-ledger/internal/ledger/application/account"
 	"financial-ledger/internal/ledger/domain"
+	"financial-ledger/internal/platform/httpx"
 	"financial-ledger/internal/platform/observability"
 )
-
-const maxRequestBodySize = 1 << 20
 
 type AccountHandler struct {
 	createAccount account.CreateAccountUseCase
@@ -44,58 +40,37 @@ type accountResponse struct {
 	Status   string `json:"status"`
 }
 
-type errorResponse struct {
-	Error string `json:"error"`
-}
-
 func (h *AccountHandler) Create(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
 	if r.Method != http.MethodPost {
-		writeError(
+		writeHTTPError(
 			w,
+			r,
 			http.StatusMethodNotAllowed,
+			"method_not_allowed",
 			"method not allowed",
 		)
 		return
 	}
 
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(
-		http.MaxBytesReader(
-			w,
-			r.Body,
-			maxRequestBodySize,
-		),
-	)
-
-	decoder.DisallowUnknownFields()
-
 	var request createAccountRequest
 
-	if err := decoder.Decode(&request); err != nil {
-		writeError(
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		writeHTTPError(
 			w,
+			r,
 			http.StatusBadRequest,
+			"invalid_request",
 			"invalid request body",
-		)
-		return
-	}
-
-	if err := ensureSingleJSONValue(decoder); err != nil {
-		writeError(
-			w,
-			http.StatusBadRequest,
-			"request body must contain only one JSON object",
 		)
 		return
 	}
 
 	accountID, err := domain.NewAccountID(request.ID)
 	if err != nil {
-		writeApplicationError(w, err)
+		writeApplicationError(w, r, err)
 		return
 	}
 
@@ -121,7 +96,7 @@ func (h *AccountHandler) Create(
 				slog.Any("error", err),
 			)
 		}
-		writeApplicationError(w, err)
+		writeApplicationError(w, r, err)
 		return
 	}
 
@@ -140,7 +115,7 @@ func (h *AccountHandler) Create(
 		)
 	}
 
-	writeJSON(
+	httpx.WriteJSON(
 		w,
 		http.StatusCreated,
 		accountResponse{
@@ -151,77 +126,4 @@ func (h *AccountHandler) Create(
 			Status:   string(createdAccount.Status()),
 		},
 	)
-}
-
-func ensureSingleJSONValue(decoder *json.Decoder) error {
-	var extra any
-
-	err := decoder.Decode(&extra)
-	if err == io.EOF {
-		return nil
-	}
-
-	if err == nil {
-		return errors.New("multiple JSON values")
-	}
-
-	return err
-}
-
-func writeApplicationError(w http.ResponseWriter, err error) {
-	statusCode := http.StatusInternalServerError
-	message := "internal server error"
-
-	if isClientError(err) {
-		statusCode = http.StatusBadRequest
-		message = err.Error()
-	}
-
-	writeError(w, statusCode, message)
-}
-
-func isClientError(err error) bool {
-	return errors.Is(err, domain.ErrInvalidID) ||
-		errors.Is(err, domain.ErrInvalidCurrency) ||
-		errors.Is(err, domain.ErrCurrencyMismatch) ||
-		errors.Is(err, domain.ErrAmountMustNotBeNegative) ||
-		errors.Is(err, domain.ErrAmountMustBePositive) ||
-		errors.Is(err, domain.ErrAmountOverflow) ||
-		errors.Is(err, domain.ErrInvalidPostingDirection) ||
-		errors.Is(err, domain.ErrJournalEntryWithoutPostings) ||
-		errors.Is(err, domain.ErrJournalEntryWithoutDebit) ||
-		errors.Is(err, domain.ErrJournalEntryWithoutCredit) ||
-		errors.Is(err, domain.ErrUnbalancedJournalEntry) ||
-		errors.Is(err, domain.ErrEmptyTransactionDescription) ||
-		errors.Is(err, domain.ErrEmptyAccountCode) ||
-		errors.Is(err, domain.ErrEmptyAccountName) ||
-		errors.Is(err, domain.ErrInvalidAccount) ||
-		errors.Is(err, domain.ErrInvalidAccountStatus) ||
-		errors.Is(err, account.ErrInvalidPageSize) ||
-		isTransactionClientError(err)
-}
-
-func writeError(
-	w http.ResponseWriter,
-	statusCode int,
-	message string,
-) {
-	writeJSON(
-		w,
-		statusCode,
-		errorResponse{
-			Error: message,
-		},
-	)
-}
-
-func writeJSON(
-	w http.ResponseWriter,
-	statusCode int,
-	payload any,
-) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-
-	_ = json.NewEncoder(w).Encode(payload)
 }
