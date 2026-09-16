@@ -58,3 +58,24 @@ scripts\test-mutation.cmd
 ```
 
 The script uses one worker and a larger timeout coefficient by default because parallel mutation processes can contend for Go build-cache files on Windows. `TIMED_OUT` mutants are reported as warnings: Gremlins treats them as mutations that caused the test process to time out, but excludes them from its efficacy calculation. `LIVED` and `NOT COVERED` results remain visible in the JSON report and affect the configured thresholds.
+
+### PostgreSQL integration tests
+
+```cmd
+scripts\test-integration.cmd
+```
+
+The integration script:
+
+- starts the PostgreSQL service with Docker Compose;
+- waits for the container healthcheck;
+- applies the migrations with the `migrate` CLI;
+- runs `go test -tags=integration ./...`.
+
+It reads `.env` when present. The PostgreSQL container remains running after the tests so the database can be inspected. Stop it with:
+
+```cmd
+make infra-down
+```
+
+If the migration executable is not on `PATH`, provide its path through `MIGRATE`.
