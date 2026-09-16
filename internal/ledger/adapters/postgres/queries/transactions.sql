@@ -1,3 +1,7 @@
+-- name: CreateTransaction :exec
+INSERT INTO transactions (id, description)
+VALUES ($1, $2);
+
 -- name: GetTransaction :one
 SELECT *
 FROM transactions

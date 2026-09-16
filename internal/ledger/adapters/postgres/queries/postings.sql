@@ -1,3 +1,13 @@
+-- name: CreatePosting :exec
+INSERT INTO postings (
+    id,
+    journal_entry_id,
+    account_id,
+    direction,
+    amount_minor_units
+)
+VALUES ($1, $2, $3, $4, $5);
+
 -- name: ListAccountPostings :many
 SELECT
     p.id,

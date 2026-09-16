@@ -47,9 +47,14 @@ func run(ctx context.Context) error {
 		dependencies.CreateAccount,
 		logger,
 	)
+	transactionHandler := httpadapter.NewTransactionHandler(
+		dependencies.PostTransaction,
+		logger,
+	)
 	router := httpadapter.NewRouter(
 		accountHandler,
 		dependencies.CheckReadiness,
+		transactionHandler,
 	)
 	handler := observability.HTTPRequestLogger(logger)(router)
 

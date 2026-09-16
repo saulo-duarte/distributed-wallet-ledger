@@ -8,11 +8,13 @@ import (
 	"financial-ledger/internal/ledger/adapters/postgres"
 	db "financial-ledger/internal/ledger/adapters/postgres/generated"
 	"financial-ledger/internal/ledger/application/account"
+	"financial-ledger/internal/ledger/application/transaction"
 	"financial-ledger/internal/platform/config"
 )
 
 type Dependencies struct {
-	CreateAccount account.CreateAccountUseCase
+	CreateAccount   account.CreateAccountUseCase
+	PostTransaction transaction.PostTransactionUseCase
 
 	readiness func(context.Context) error
 	close     func()
@@ -27,11 +29,13 @@ func New(ctx context.Context, cfg config.Config) (*Dependencies, error) {
 
 	queries := db.New(pool)
 	accountRepository := postgres.NewAccountRepository(queries)
+	transactionRepository := postgres.NewTransactionRepository(pool, queries)
 
 	return &Dependencies{
-		CreateAccount: account.NewCreateAccountUseCase(accountRepository),
-		readiness:     pool.Ping,
-		close:         pool.Close,
+		CreateAccount:   account.NewCreateAccountUseCase(accountRepository),
+		PostTransaction: transaction.NewPostTransactionUseCase(transactionRepository),
+		readiness:       pool.Ping,
+		close:           pool.Close,
 	}, nil
 }
 

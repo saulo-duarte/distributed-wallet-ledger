@@ -183,10 +183,21 @@ func writeApplicationError(w http.ResponseWriter, err error) {
 func isClientError(err error) bool {
 	return errors.Is(err, domain.ErrInvalidID) ||
 		errors.Is(err, domain.ErrInvalidCurrency) ||
+		errors.Is(err, domain.ErrCurrencyMismatch) ||
+		errors.Is(err, domain.ErrAmountMustNotBeNegative) ||
+		errors.Is(err, domain.ErrAmountMustBePositive) ||
+		errors.Is(err, domain.ErrAmountOverflow) ||
+		errors.Is(err, domain.ErrInvalidPostingDirection) ||
+		errors.Is(err, domain.ErrJournalEntryWithoutPostings) ||
+		errors.Is(err, domain.ErrJournalEntryWithoutDebit) ||
+		errors.Is(err, domain.ErrJournalEntryWithoutCredit) ||
+		errors.Is(err, domain.ErrUnbalancedJournalEntry) ||
+		errors.Is(err, domain.ErrEmptyTransactionDescription) ||
 		errors.Is(err, domain.ErrEmptyAccountCode) ||
 		errors.Is(err, domain.ErrEmptyAccountName) ||
 		errors.Is(err, domain.ErrInvalidAccount) ||
-		errors.Is(err, domain.ErrInvalidAccountStatus)
+		errors.Is(err, domain.ErrInvalidAccountStatus) ||
+		isTransactionClientError(err)
 }
 
 func writeError(
