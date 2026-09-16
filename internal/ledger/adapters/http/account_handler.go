@@ -3,23 +3,29 @@ package httpadapter
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+
 	"financial-ledger/internal/ledger/application/account"
 	"financial-ledger/internal/ledger/domain"
-	"io"
-	"net/http"
+	"financial-ledger/internal/platform/observability"
 )
 
 const maxRequestBodySize = 1 << 20
 
 type AccountHandler struct {
 	createAccount account.CreateAccountUseCase
+	logger        *slog.Logger
 }
 
 func NewAccountHandler(
 	createAccount account.CreateAccountUseCase,
+	logger *slog.Logger,
 ) *AccountHandler {
 	return &AccountHandler{
 		createAccount: createAccount,
+		logger:        logger,
 	}
 }
 
@@ -103,8 +109,35 @@ func (h *AccountHandler) Create(
 		},
 	)
 	if err != nil {
+		if !isClientError(err) && h.logger != nil {
+			h.logger.ErrorContext(
+				r.Context(),
+				"account_creation_failed",
+				slog.String("operation", "account.create"),
+				slog.String(
+					"request_id",
+					observability.RequestIDFromContext(r.Context()),
+				),
+				slog.Any("error", err),
+			)
+		}
 		writeApplicationError(w, err)
 		return
+	}
+
+	if h.logger != nil {
+		h.logger.InfoContext(
+			r.Context(),
+			"account_created",
+			slog.String("operation", "account.create"),
+			slog.String(
+				"request_id",
+				observability.RequestIDFromContext(r.Context()),
+			),
+			slog.String("account_id", createdAccount.ID().String()),
+			slog.String("account_code", createdAccount.Code()),
+			slog.String("currency", createdAccount.Currency().String()),
+		)
 	}
 
 	writeJSON(

@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +17,7 @@ func main() {
 	defer stop()
 
 	if err := run(ctx); err != nil {
-		log.Fatal(err)
+		slog.Error("application_failed", slog.Any("error", err))
+		os.Exit(1)
 	}
 }

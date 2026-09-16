@@ -12,12 +12,14 @@ import (
 const (
 	defaultAPIAddress     = ":8080"
 	defaultMigrationsPath = "migrations"
+	defaultLogLevel       = "info"
 )
 
 type Config struct {
 	APIAddress     string
 	DatabaseURL    string
 	MigrationsPath string
+	LogLevel       string
 }
 
 func Load() (Config, error) {
@@ -36,6 +38,7 @@ func LoadFromEnv(getenv func(string) (string, bool)) (Config, error) {
 		"MIGRATIONS_PATH",
 		defaultMigrationsPath,
 	)
+	logLevel := valueOrDefault(getenv, "LOG_LEVEL", defaultLogLevel)
 
 	if databaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL cannot be empty")
@@ -53,6 +56,7 @@ func LoadFromEnv(getenv func(string) (string, bool)) (Config, error) {
 		APIAddress:     apiAddress,
 		DatabaseURL:    databaseURL,
 		MigrationsPath: migrationsPath,
+		LogLevel:       logLevel,
 	}, nil
 }
 

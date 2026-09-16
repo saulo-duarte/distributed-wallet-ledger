@@ -7,6 +7,7 @@ func TestLoadFromEnv(t *testing.T) {
 		"API_ADDR":        ":9090",
 		"DATABASE_URL":    "postgres://ledger:ledger@localhost:5432/ledger?sslmode=disable",
 		"MIGRATIONS_PATH": "db/migrations",
+		"LOG_LEVEL":       "debug",
 	}
 
 	cfg, err := LoadFromEnv(func(key string) (string, bool) {
@@ -28,6 +29,10 @@ func TestLoadFromEnv(t *testing.T) {
 	if cfg.MigrationsPath != "db/migrations" {
 		t.Fatalf("unexpected migrations path: %q", cfg.MigrationsPath)
 	}
+
+	if cfg.LogLevel != "debug" {
+		t.Fatalf("unexpected log level: %q", cfg.LogLevel)
+	}
 }
 
 func TestLoadFromEnvUsesDefaults(t *testing.T) {
@@ -47,6 +52,10 @@ func TestLoadFromEnvUsesDefaults(t *testing.T) {
 
 	if cfg.MigrationsPath != defaultMigrationsPath {
 		t.Fatalf("unexpected default migrations path: %q", cfg.MigrationsPath)
+	}
+
+	if cfg.LogLevel != defaultLogLevel {
+		t.Fatalf("unexpected default log level: %q", cfg.LogLevel)
 	}
 }
 
