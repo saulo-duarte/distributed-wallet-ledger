@@ -56,11 +56,16 @@ func run(ctx context.Context) error {
 		dependencies.ListAccountEntries,
 		logger,
 	)
+	reversalHandler := httpadapter.NewReversalHandler(
+		dependencies.ReverseTransaction,
+		logger,
+	)
 	router := httpadapter.NewRouter(
 		accountHandler,
 		dependencies.CheckReadiness,
 		transactionHandler,
 		accountEntriesHandler,
+		reversalHandler,
 	)
 	handler := observability.HTTPRequestLogger(logger)(router)
 
