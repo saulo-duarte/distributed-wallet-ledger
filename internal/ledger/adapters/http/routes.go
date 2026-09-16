@@ -1,19 +1,21 @@
 package httpadapter
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
-func NewRouter(accountHandler *AccountHandler) http.Handler {
+func NewRouter(
+	accountHandler *AccountHandler,
+	readinessChecker func(context.Context) error,
+) http.Handler {
 	mux := http.NewServeMux()
+	healthHandler := NewHealthHandler(readinessChecker)
 
-	mux.HandleFunc("GET /health", health)
+	mux.HandleFunc("GET /health", healthHandler.Live)
+	mux.HandleFunc("GET /health/live", healthHandler.Live)
+	mux.HandleFunc("GET /health/ready", healthHandler.Ready)
 	mux.HandleFunc("POST /accounts", accountHandler.Create)
 
 	return mux
-}
-
-func health(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	_, _ = w.Write([]byte(`{"status":"ok"}` + "\n"))
 }

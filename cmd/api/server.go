@@ -47,7 +47,10 @@ func run(ctx context.Context) error {
 		dependencies.CreateAccount,
 		logger,
 	)
-	router := httpadapter.NewRouter(accountHandler)
+	router := httpadapter.NewRouter(
+		accountHandler,
+		dependencies.CheckReadiness,
+	)
 	handler := observability.HTTPRequestLogger(logger)(router)
 
 	server := &http.Server{

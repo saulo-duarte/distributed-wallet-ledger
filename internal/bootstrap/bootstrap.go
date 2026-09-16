@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"financial-ledger/internal/ledger/adapters/postgres"
@@ -13,7 +14,8 @@ import (
 type Dependencies struct {
 	CreateAccount account.CreateAccountUseCase
 
-	close func()
+	readiness func(context.Context) error
+	close     func()
 }
 
 func New(ctx context.Context, cfg config.Config) (*Dependencies, error) {
@@ -28,8 +30,17 @@ func New(ctx context.Context, cfg config.Config) (*Dependencies, error) {
 
 	return &Dependencies{
 		CreateAccount: account.NewCreateAccountUseCase(accountRepository),
+		readiness:     pool.Ping,
 		close:         pool.Close,
 	}, nil
+}
+
+func (d *Dependencies) CheckReadiness(ctx context.Context) error {
+	if d == nil || d.readiness == nil {
+		return errors.New("readiness check is not configured")
+	}
+
+	return d.readiness(ctx)
 }
 
 func (d *Dependencies) Close() {
