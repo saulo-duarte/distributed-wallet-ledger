@@ -319,6 +319,15 @@ func TestTransactionRepositoryPostRejectsDuplicateIdempotencyKey(t *testing.T) {
 
 	if err := repository.Post(
 		context.Background(),
+		first,
+		"integration-duplicate-001",
+		"integration-duplicate-hash-001",
+	); err != nil {
+		t.Fatalf("replay transaction: %v", err)
+	}
+
+	if err := repository.Post(
+		context.Background(),
 		second,
 		"integration-duplicate-001",
 		"integration-duplicate-hash-001",

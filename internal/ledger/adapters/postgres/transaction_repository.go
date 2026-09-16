@@ -45,6 +45,19 @@ func (r *TransactionRepository) Post(
 		return fmt.Errorf("transaction repository is not configured")
 	}
 
+	replayed, err := r.checkIdempotency(
+		ctx,
+		postedTransaction,
+		idempotencyKey,
+		requestHash,
+	)
+	if err != nil {
+		return err
+	}
+	if replayed {
+		return nil
+	}
+
 	databaseTransaction, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction posting: %w", err)
@@ -130,6 +143,21 @@ func (r *TransactionRepository) Post(
 			TransactionID:  transactionID,
 		},
 	); err != nil {
+		_ = databaseTransaction.Rollback(ctx)
+
+		replayed, lookupErr := r.checkIdempotency(
+			ctx,
+			postedTransaction,
+			idempotencyKey,
+			requestHash,
+		)
+		if lookupErr != nil {
+			return lookupErr
+		}
+		if replayed {
+			return nil
+		}
+
 		return fmt.Errorf("create idempotency key: %w", err)
 	}
 
@@ -138,6 +166,38 @@ func (r *TransactionRepository) Post(
 	}
 
 	return nil
+}
+
+func (r *TransactionRepository) checkIdempotency(
+	ctx context.Context,
+	postedTransaction domain.Transaction,
+	idempotencyKey string,
+	requestHash string,
+) (bool, error) {
+	existing, err := r.queries.GetIdempotencyKey(
+		ctx,
+		db.GetIdempotencyKeyParams{
+			Scope:          transactionPostingScope,
+			IdempotencyKey: idempotencyKey,
+		},
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("get idempotency key: %w", err)
+	}
+
+	existingTransactionID := domain.TransactionID(
+		existing.TransactionID.String(),
+	)
+	if existing.RequestHash != requestHash ||
+		existingTransactionID != postedTransaction.ID() {
+		return false, transaction.ErrIdempotencyKeyConflict
+	}
+
+	return true, nil
 }
 
 func (r *TransactionRepository) Get(

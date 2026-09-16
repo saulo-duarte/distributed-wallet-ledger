@@ -100,6 +100,8 @@ func mapApplicationError(err error) errorMapping {
 		return errorMapping{http.StatusBadRequest, "empty_idempotency_key"}
 	case errors.Is(err, transaction.ErrEmptyRequestHash):
 		return errorMapping{http.StatusBadRequest, "empty_request_hash"}
+	case errors.Is(err, transaction.ErrIdempotencyKeyConflict):
+		return errorMapping{http.StatusConflict, "idempotency_key_conflict"}
 	case errors.Is(err, httpx.ErrInvalidRequestBody):
 		return errorMapping{http.StatusBadRequest, "invalid_request"}
 	case errors.Is(err, httpx.ErrMultipleJSONValues):

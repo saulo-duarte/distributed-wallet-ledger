@@ -4,7 +4,7 @@ Phase 1 uses a modular monolith with a single PostgreSQL source of truth. The de
 
 ```mermaid
 flowchart TD
-    Client --> HTTP[HTTP adapter]
+    Client --> HTTP[HTTP adapter: net/http + chi]
     HTTP --> App[Ledger application]
     App --> Domain[Ledger domain]
     App --> Repo[Repository port]
@@ -21,8 +21,8 @@ flowchart LR
     Config --> Bootstrap[Bootstrap]
     Bootstrap --> Pool[PostgreSQL pool]
     Bootstrap --> Queries[SQLC queries]
-    Bootstrap --> Repository[Account repository]
-    Bootstrap --> UseCase[Account use case]
+    Bootstrap --> Repository[Ledger repositories]
+    Bootstrap --> UseCase[Ledger use cases]
 ```
 
 ## Dependency direction
@@ -38,7 +38,7 @@ Adapters -> Application -> Domain
 - `internal/ledger/adapters` translates external protocols and persistence representations. PostgreSQL-specific code and SQLC-generated code stay here.
 - `internal/platform/config` loads environment-backed configuration. It has no SSM integration yet.
 - `internal/bootstrap` composes concrete adapters and application use cases.
-- `cmd/api` owns process startup and will own the HTTP boundary when it is implemented.
+- `cmd/api` owns process startup and the HTTP server composition.
 
 ## Package-by-feature layout
 

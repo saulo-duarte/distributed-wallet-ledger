@@ -41,7 +41,7 @@ flowchart LR
 
 PostgreSQL is the source of truth in Phase 1. There is no distributed messaging, read-model database, or microservice split yet.
 
-The current composition root loads local configuration, opens the PostgreSQL pool, creates the SQLC queries, and wires the account repository into the application use case. HTTP handlers are not implemented yet.
+The current composition root loads local configuration, opens the PostgreSQL pool, creates the SQLC queries, and wires the account and transaction use cases into the HTTP API. The API uses `net/http` handlers, `chi` routing, and shared response/error helpers.
 
 ## Technology Stack
 
@@ -49,14 +49,14 @@ The current composition root loads local configuration, opens the PostgreSQL poo
 - PostgreSQL 16 via Docker Compose
 - SQLC for typed SQL access
 - `golang-migrate` CLI for migrations
-- `net/http` for the initial HTTP boundary
+- `net/http` handlers with `chi` routing
 - Makefile for repeatable local commands
 
 ## Current Phase
 
 **Phase 1 — Ledger Core**
 
-The domain model and the first account creation use case are implemented. PostgreSQL persistence, local migrations, and the first integration tests are being connected incrementally.
+The Ledger Core vertical slice is implemented: accounts, balanced transactions, journal entries, postings, transaction lookup, account entry listing, reversal, idempotency, PostgreSQL persistence, and integration tests.
 
 ## Roadmap
 
@@ -91,7 +91,7 @@ make test-integration
 
 This starts PostgreSQL, waits for its healthcheck, applies migrations, and runs tests with the `integration` build tag. The `migrate` CLI must be available on `PATH`.
 
-The API command currently initializes configuration and dependency injection, then exits because the HTTP server has not been implemented yet.
+The API command initializes configuration and dependency injection, starts the HTTP server, and exposes the current Ledger Core endpoints.
 
 Useful commands are documented in the [local development guide](docs/README.md).
 

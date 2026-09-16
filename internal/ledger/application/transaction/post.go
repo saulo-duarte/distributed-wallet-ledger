@@ -15,6 +15,10 @@ var (
 	ErrEmptyRequestHash = errors.New(
 		"request hash cannot be empty",
 	)
+
+	ErrIdempotencyKeyConflict = errors.New(
+		"idempotency key was already used with another request",
+	)
 )
 
 type PostingCommand struct {
