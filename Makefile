@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-integration vet fmt sqlc-generate compose-up compose-down compose-config migrate-up migrate-down
+.PHONY: build test test-all test-unit test-integration test-fuzz test-mutation vet fmt sqlc-generate compose-up compose-down compose-config migrate-up migrate-down
 
 DATABASE_URL ?= postgres://ledger:ledger@localhost:5432/ledger?sslmode=disable
 MIGRATE ?= migrate
@@ -9,11 +9,20 @@ build:
 test:
 	go test ./...
 
+test-all:
+	scripts\test-all.cmd
+
 test-unit:
 	go test ./internal/ledger/domain/...
 
 test-integration:
 	go test -tags=integration ./...
+
+test-fuzz:
+	scripts\test-fuzz.cmd
+
+test-mutation:
+	scripts\test-mutation.cmd
 
 vet:
 	go vet ./...
