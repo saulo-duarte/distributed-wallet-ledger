@@ -9,6 +9,7 @@ import (
 	"time"
 
 	db "financial-ledger/internal/ledger/adapters/postgres/generated"
+	"financial-ledger/internal/ledger/application/account"
 	"financial-ledger/internal/ledger/domain"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -223,6 +224,125 @@ func TestTransactionRepositoryPostRejectsDuplicateIdempotencyKey(t *testing.T) {
 		"integration-duplicate-hash-001",
 	); err == nil {
 		t.Fatal("expected duplicate idempotency key error")
+	}
+}
+
+func TestAccountRepositoryListEntriesUsesDescendingCursorPagination(t *testing.T) {
+	pool := openIntegrationPool(t)
+	queries := db.New(pool)
+	accountRepository := NewAccountRepository(queries)
+	transactionRepository := NewTransactionRepository(pool, queries)
+
+	debitAccount := newIntegrationAccountWithCode(
+		t,
+		"0198f3b2-7f0a-7af0-8def-123456789af0",
+		"integration-list-debit",
+	)
+	creditAccount := newIntegrationAccountWithCode(
+		t,
+		"0198f3b2-7f0a-7af1-8def-123456789af1",
+		"integration-list-credit",
+	)
+
+	transactionIDs := []string{
+		"0198f3b2-7f0a-7af2-8def-123456789af2",
+		"0198f3b3-7f0a-7af3-8def-123456789af3",
+		"0198f3b4-7f0a-7af4-8def-123456789af4",
+	}
+
+	for _, transactionID := range transactionIDs {
+		cleanupLedgerTransaction(t, pool, transactionID)
+	}
+	cleanupAccount(t, pool, debitAccount.Code())
+	cleanupAccount(t, pool, creditAccount.Code())
+	t.Cleanup(func() {
+		for _, transactionID := range transactionIDs {
+			cleanupLedgerTransaction(t, pool, transactionID)
+		}
+		cleanupAccount(t, pool, debitAccount.Code())
+		cleanupAccount(t, pool, creditAccount.Code())
+	})
+
+	if err := accountRepository.Create(context.Background(), debitAccount); err != nil {
+		t.Fatalf("create debit account: %v", err)
+	}
+	if err := accountRepository.Create(context.Background(), creditAccount); err != nil {
+		t.Fatalf("create credit account: %v", err)
+	}
+
+	for index, transactionID := range transactionIDs {
+		postedTransaction := newIntegrationTransaction(
+			t,
+			transactionID,
+			debitAccount.ID(),
+			creditAccount.ID(),
+		)
+
+		if err := transactionRepository.Post(
+			context.Background(),
+			postedTransaction,
+			fmt.Sprintf("integration-list-%d", index),
+			fmt.Sprintf("integration-list-hash-%d", index),
+		); err != nil {
+			t.Fatalf("post transaction %d: %v", index, err)
+		}
+
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	firstPage, err := accountRepository.ListEntries(
+		context.Background(),
+		debitAccount.ID(),
+		2,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("list first account entries page: %v", err)
+	}
+
+	if len(firstPage) != 2 {
+		t.Fatalf("unexpected first page size: got %d, want 2", len(firstPage))
+	}
+
+	if firstPage[0].TransactionID.String() != transactionIDs[2] {
+		t.Fatalf(
+			"unexpected newest transaction: got %q, want %q",
+			firstPage[0].TransactionID,
+			transactionIDs[2],
+		)
+	}
+
+	if firstPage[1].TransactionID.String() != transactionIDs[1] {
+		t.Fatalf(
+			"unexpected second transaction: got %q, want %q",
+			firstPage[1].TransactionID,
+			transactionIDs[1],
+		)
+	}
+
+	secondPage, err := accountRepository.ListEntries(
+		context.Background(),
+		debitAccount.ID(),
+		2,
+		&account.AccountEntriesCursor{
+			CreatedAt: firstPage[1].CreatedAt,
+			PostingID: firstPage[1].PostingID,
+		},
+	)
+	if err != nil {
+		t.Fatalf("list second account entries page: %v", err)
+	}
+
+	if len(secondPage) != 1 {
+		t.Fatalf("unexpected second page size: got %d, want 1", len(secondPage))
+	}
+
+	if secondPage[0].TransactionID.String() != transactionIDs[0] {
+		t.Fatalf(
+			"unexpected oldest transaction: got %q, want %q",
+			secondPage[0].TransactionID,
+			transactionIDs[0],
+		)
 	}
 }
 

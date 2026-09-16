@@ -197,6 +197,7 @@ func isClientError(err error) bool {
 		errors.Is(err, domain.ErrEmptyAccountName) ||
 		errors.Is(err, domain.ErrInvalidAccount) ||
 		errors.Is(err, domain.ErrInvalidAccountStatus) ||
+		errors.Is(err, account.ErrInvalidPageSize) ||
 		isTransactionClientError(err)
 }
 

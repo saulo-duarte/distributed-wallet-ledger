@@ -9,6 +9,7 @@ func NewRouter(
 	accountHandler *AccountHandler,
 	readinessChecker func(context.Context) error,
 	transactionHandler *TransactionHandler,
+	accountEntriesHandler *AccountEntriesHandler,
 ) http.Handler {
 	mux := http.NewServeMux()
 	healthHandler := NewHealthHandler(readinessChecker)
@@ -20,6 +21,12 @@ func NewRouter(
 
 	if transactionHandler != nil {
 		mux.HandleFunc("POST /transactions", transactionHandler.Post)
+	}
+	if accountEntriesHandler != nil {
+		mux.HandleFunc(
+			"GET /accounts/{accountID}/entries",
+			accountEntriesHandler.List,
+		)
 	}
 
 	return mux

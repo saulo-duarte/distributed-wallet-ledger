@@ -134,6 +134,7 @@ func TestNewRouterRegistersTransactionEndpoint(t *testing.T) {
 		nil,
 		func(context.Context) error { return nil },
 		handler,
+		nil,
 	)
 
 	body := `{

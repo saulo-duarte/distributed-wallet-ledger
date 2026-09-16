@@ -154,17 +154,3 @@ func journalEntryIDToUUID(id domain.JournalEntryID) (pgtype.UUID, error) {
 
 	return uuid, nil
 }
-
-func postingIDToUUID(id domain.PostingID) (pgtype.UUID, error) {
-	var uuid pgtype.UUID
-
-	if err := uuid.Scan(id.String()); err != nil {
-		return pgtype.UUID{}, fmt.Errorf(
-			"convert posting ID %q to PostgreSQL UUID: %w",
-			id.String(),
-			err,
-		)
-	}
-
-	return uuid, nil
-}

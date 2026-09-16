@@ -13,8 +13,9 @@ import (
 )
 
 type Dependencies struct {
-	CreateAccount   account.CreateAccountUseCase
-	PostTransaction transaction.PostTransactionUseCase
+	CreateAccount      account.CreateAccountUseCase
+	PostTransaction    transaction.PostTransactionUseCase
+	ListAccountEntries account.ListAccountEntriesUseCase
 
 	readiness func(context.Context) error
 	close     func()
@@ -32,10 +33,11 @@ func New(ctx context.Context, cfg config.Config) (*Dependencies, error) {
 	transactionRepository := postgres.NewTransactionRepository(pool, queries)
 
 	return &Dependencies{
-		CreateAccount:   account.NewCreateAccountUseCase(accountRepository),
-		PostTransaction: transaction.NewPostTransactionUseCase(transactionRepository),
-		readiness:       pool.Ping,
-		close:           pool.Close,
+		CreateAccount:      account.NewCreateAccountUseCase(accountRepository),
+		PostTransaction:    transaction.NewPostTransactionUseCase(transactionRepository),
+		ListAccountEntries: account.NewListAccountEntriesUseCase(accountRepository),
+		readiness:          pool.Ping,
+		close:              pool.Close,
 	}, nil
 }
 

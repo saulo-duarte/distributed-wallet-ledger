@@ -96,7 +96,7 @@ func TestHealthHandlerReadyReturnsServiceUnavailableWhenCheckerIsMissing(t *test
 }
 
 func TestNewRouterRegistersHealthEndpoints(t *testing.T) {
-	router := NewRouter(nil, func(context.Context) error { return nil }, nil)
+	router := NewRouter(nil, func(context.Context) error { return nil }, nil, nil)
 
 	tests := []struct {
 		name       string
