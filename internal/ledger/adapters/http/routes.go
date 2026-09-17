@@ -14,13 +14,79 @@ func NewRouter(
 	accountEntriesHandler *AccountEntriesHandler,
 	reversalHandlers ...*ReversalHandler,
 ) http.Handler {
+	return newRouter(
+		accountHandler,
+		readinessChecker,
+		transactionHandler,
+		accountEntriesHandler,
+		nil,
+		reversalHandlers...,
+	)
+}
+
+func NewRouterWithWallet(
+	accountHandler *AccountHandler,
+	readinessChecker func(context.Context) error,
+	transactionHandler *TransactionHandler,
+	accountEntriesHandler *AccountEntriesHandler,
+	walletHandler *WalletHandler,
+	reversalHandlers ...*ReversalHandler,
+) http.Handler {
+	return newRouter(
+		accountHandler,
+		readinessChecker,
+		transactionHandler,
+		accountEntriesHandler,
+		walletHandler,
+		reversalHandlers...,
+	)
+}
+
+func newRouter(
+	accountHandler *AccountHandler,
+	readinessChecker func(context.Context) error,
+	transactionHandler *TransactionHandler,
+	accountEntriesHandler *AccountEntriesHandler,
+	walletHandler *WalletHandler,
+	reversalHandlers ...*ReversalHandler,
+) http.Handler {
 	router := chi.NewRouter()
+
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key, Authorization, X-Request-ID")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
+
 	healthHandler := NewHealthHandler(readinessChecker)
 
 	router.Get("/health", healthHandler.Live)
 	router.Get("/health/live", healthHandler.Live)
 	router.Get("/health/ready", healthHandler.Ready)
 	router.Post("/accounts", accountHandler.Create)
+	if walletHandler != nil {
+		router.Post("/wallets", walletHandler.Create)
+		if walletHandler.balanceEnabled {
+			router.Get("/wallets/{walletID}/balance", walletHandler.GetBalance)
+		}
+		if walletHandler.withdrawEnabled {
+			router.Post(
+				"/wallets/{walletID}/withdrawals",
+				walletHandler.Withdraw,
+			)
+		}
+		if walletHandler.queriesEnabled {
+			router.Get("/wallets/{walletID}", walletHandler.Get)
+			router.Get("/owners/{ownerID}/wallets", walletHandler.ListByOwner)
+		}
+	}
 
 	if transactionHandler != nil {
 		router.Post("/transactions", transactionHandler.Post)

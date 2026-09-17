@@ -19,6 +19,10 @@ var (
 	ErrIdempotencyKeyConflict = errors.New(
 		"idempotency key was already used with another request",
 	)
+
+	ErrInsufficientBalance = errors.New(
+		"account balance would become negative",
+	)
 )
 
 type PostingCommand struct {

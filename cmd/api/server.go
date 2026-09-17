@@ -47,6 +47,14 @@ func run(ctx context.Context) error {
 		dependencies.CreateAccount,
 		logger,
 	)
+	walletHandler := httpadapter.NewWalletHandlerWithWithdrawal(
+		dependencies.CreateWallet,
+		dependencies.GetWallet,
+		dependencies.ListWalletsByOwner,
+		dependencies.GetWalletBalance,
+		dependencies.WithdrawWallet,
+		logger,
+	)
 	transactionHandler := httpadapter.NewTransactionHandler(
 		dependencies.PostTransaction,
 		dependencies.GetTransaction,
@@ -60,11 +68,12 @@ func run(ctx context.Context) error {
 		dependencies.ReverseTransaction,
 		logger,
 	)
-	router := httpadapter.NewRouter(
+	router := httpadapter.NewRouterWithWallet(
 		accountHandler,
 		dependencies.CheckReadiness,
 		transactionHandler,
 		accountEntriesHandler,
+		walletHandler,
 		reversalHandler,
 	)
 	handler := observability.HTTPRequestLogger(logger)(router)

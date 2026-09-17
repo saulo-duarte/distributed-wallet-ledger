@@ -9,11 +9,17 @@ import (
 	db "financial-ledger/internal/ledger/adapters/postgres/generated"
 	"financial-ledger/internal/ledger/application/account"
 	"financial-ledger/internal/ledger/application/transaction"
+	"financial-ledger/internal/ledger/application/wallet"
 	"financial-ledger/internal/platform/config"
 )
 
 type Dependencies struct {
 	CreateAccount      account.CreateAccountUseCase
+	CreateWallet       wallet.CreateWalletUseCase
+	GetWallet          wallet.GetWalletUseCase
+	ListWalletsByOwner wallet.ListWalletsByOwnerUseCase
+	GetWalletBalance   wallet.GetWalletBalanceUseCase
+	WithdrawWallet     wallet.WithdrawWalletUseCase
 	PostTransaction    transaction.PostTransactionUseCase
 	GetTransaction     transaction.GetTransactionUseCase
 	ReverseTransaction transaction.ReverseTransactionUseCase
@@ -32,11 +38,27 @@ func New(ctx context.Context, cfg config.Config) (*Dependencies, error) {
 
 	queries := db.New(pool)
 	accountRepository := postgres.NewAccountRepository(queries)
+	walletRepository := postgres.NewWalletRepository(queries)
 	transactionRepository := postgres.NewTransactionRepository(pool, queries)
+	postTransaction := transaction.NewPostTransactionUseCase(
+		transactionRepository,
+	)
 
 	return &Dependencies{
 		CreateAccount:      account.NewCreateAccountUseCase(accountRepository),
-		PostTransaction:    transaction.NewPostTransactionUseCase(transactionRepository),
+		CreateWallet:       wallet.NewCreateWalletUseCase(walletRepository),
+		GetWallet:          wallet.NewGetWalletUseCase(walletRepository),
+		ListWalletsByOwner: wallet.NewListWalletsByOwnerUseCase(walletRepository),
+		GetWalletBalance: wallet.NewGetWalletBalanceUseCase(
+			walletRepository,
+			walletRepository,
+		),
+		WithdrawWallet: wallet.NewWithdrawWalletUseCase(
+			walletRepository,
+			walletRepository,
+			postTransaction,
+		),
+		PostTransaction:    postTransaction,
 		GetTransaction:     transaction.NewGetTransactionUseCase(transactionRepository),
 		ReverseTransaction: transaction.NewReverseTransactionUseCase(transactionRepository, transactionRepository),
 		ListAccountEntries: account.NewListAccountEntriesUseCase(accountRepository),

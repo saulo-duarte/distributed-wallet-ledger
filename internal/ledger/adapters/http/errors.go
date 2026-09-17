@@ -6,6 +6,7 @@ import (
 
 	"financial-ledger/internal/ledger/application/account"
 	"financial-ledger/internal/ledger/application/transaction"
+	"financial-ledger/internal/ledger/application/wallet"
 	"financial-ledger/internal/ledger/domain"
 	"financial-ledger/internal/platform/httpx"
 	"financial-ledger/internal/platform/observability"
@@ -56,6 +57,14 @@ func mapApplicationError(err error) errorMapping {
 	switch {
 	case errors.Is(err, transaction.ErrTransactionNotFound):
 		return errorMapping{http.StatusNotFound, "transaction_not_found"}
+	case errors.Is(err, wallet.ErrWalletNotFound):
+		return errorMapping{http.StatusNotFound, "wallet_not_found"}
+	case errors.Is(err, wallet.ErrInsufficientFunds):
+		return errorMapping{http.StatusUnprocessableEntity, "insufficient_funds"}
+	case errors.Is(err, transaction.ErrInsufficientBalance):
+		return errorMapping{http.StatusUnprocessableEntity, "insufficient_funds"}
+	case errors.Is(err, wallet.ErrWithdrawalSameAccount):
+		return errorMapping{http.StatusBadRequest, "withdrawal_same_account"}
 	case errors.Is(err, domain.ErrInvalidID):
 		return errorMapping{http.StatusBadRequest, "invalid_id"}
 	case errors.Is(err, domain.ErrInvalidCurrency):
@@ -94,6 +103,18 @@ func mapApplicationError(err error) errorMapping {
 		return errorMapping{http.StatusBadRequest, "invalid_account"}
 	case errors.Is(err, domain.ErrInvalidAccountStatus):
 		return errorMapping{http.StatusBadRequest, "invalid_account_status"}
+	case errors.Is(err, domain.ErrInvalidWalletStatus):
+		return errorMapping{http.StatusBadRequest, "invalid_wallet_status"}
+	case errors.Is(err, domain.ErrEmptyWalletOwnerID):
+		return errorMapping{http.StatusBadRequest, "empty_wallet_owner_id"}
+	case errors.Is(err, domain.ErrWalletSuspended):
+		return errorMapping{http.StatusConflict, "wallet_suspended"}
+	case errors.Is(err, domain.ErrWalletClosed):
+		return errorMapping{http.StatusConflict, "wallet_closed"}
+	case errors.Is(err, domain.ErrWalletAlreadySuspended):
+		return errorMapping{http.StatusConflict, "wallet_already_suspended"}
+	case errors.Is(err, domain.ErrWalletAlreadyClosed):
+		return errorMapping{http.StatusConflict, "wallet_already_closed"}
 	case errors.Is(err, account.ErrInvalidPageSize):
 		return errorMapping{http.StatusBadRequest, "invalid_page_size"}
 	case errors.Is(err, transaction.ErrEmptyIdempotencyKey):
