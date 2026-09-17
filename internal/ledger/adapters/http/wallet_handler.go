@@ -21,9 +21,11 @@ type WalletHandler struct {
 	listWallets     wallet.ListWalletsByOwnerUseCase
 	getBalance      wallet.GetWalletBalanceUseCase
 	withdrawWallet  wallet.WithdrawWalletUseCase
+	transferWallet  wallet.TransferWalletUseCase
 	queriesEnabled  bool
 	balanceEnabled  bool
 	withdrawEnabled bool
+	transferEnabled bool
 	logger          *slog.Logger
 }
 
@@ -36,6 +38,7 @@ func NewWalletHandler(
 		queriesEnabled:  false,
 		balanceEnabled:  false,
 		withdrawEnabled: false,
+		transferEnabled: false,
 		logger:          logger,
 	}
 }
@@ -53,6 +56,7 @@ func NewWalletHandlerWithQueries(
 		queriesEnabled:  true,
 		balanceEnabled:  false,
 		withdrawEnabled: false,
+		transferEnabled: false,
 		logger:          logger,
 	}
 }
@@ -72,6 +76,7 @@ func NewWalletHandlerWithBalance(
 		queriesEnabled:  true,
 		balanceEnabled:  true,
 		withdrawEnabled: false,
+		transferEnabled: false,
 		logger:          logger,
 	}
 }
@@ -93,6 +98,31 @@ func NewWalletHandlerWithWithdrawal(
 		queriesEnabled:  true,
 		balanceEnabled:  true,
 		withdrawEnabled: true,
+		transferEnabled: false,
+		logger:          logger,
+	}
+}
+
+func NewWalletHandlerWithTransfer(
+	createWallet wallet.CreateWalletUseCase,
+	getWallet wallet.GetWalletUseCase,
+	listWallets wallet.ListWalletsByOwnerUseCase,
+	getBalance wallet.GetWalletBalanceUseCase,
+	withdrawWallet wallet.WithdrawWalletUseCase,
+	transferWallet wallet.TransferWalletUseCase,
+	logger *slog.Logger,
+) *WalletHandler {
+	return &WalletHandler{
+		createWallet:    createWallet,
+		getWallet:       getWallet,
+		listWallets:     listWallets,
+		getBalance:      getBalance,
+		withdrawWallet:  withdrawWallet,
+		transferWallet:  transferWallet,
+		queriesEnabled:  true,
+		balanceEnabled:  true,
+		withdrawEnabled: true,
+		transferEnabled: true,
 		logger:          logger,
 	}
 }
@@ -127,6 +157,16 @@ type withdrawWalletRequest struct {
 	ClearingPostingID string `json:"clearing_posting_id"`
 	AmountMinorUnits  int64  `json:"amount_minor_units"`
 	Description       string `json:"description"`
+}
+
+type transferWalletRequest struct {
+	DestinationWalletID  string `json:"destination_wallet_id"`
+	TransactionID        string `json:"transaction_id"`
+	JournalEntryID       string `json:"journal_entry_id"`
+	SourcePostingID      string `json:"source_posting_id"`
+	DestinationPostingID string `json:"destination_posting_id"`
+	AmountMinorUnits     int64  `json:"amount_minor_units"`
+	Description          string `json:"description"`
 }
 
 func (h *WalletHandler) GetBalance(
@@ -291,6 +331,158 @@ func (h *WalletHandler) Withdraw(
 				observability.RequestIDFromContext(r.Context()),
 			),
 			slog.String("wallet_id", walletID.String()),
+			slog.String("transaction_id", postedTransaction.ID().String()),
+		)
+	}
+
+	httpx.WriteJSON(
+		w,
+		http.StatusCreated,
+		transactionResponse{
+			ID:             postedTransaction.ID().String(),
+			JournalEntryID: postedTransaction.JournalEntry().ID().String(),
+			Description:    postedTransaction.Description(),
+			Currency:       postedTransaction.JournalEntry().Currency().String(),
+			Status:         "posted",
+		},
+	)
+}
+
+func (h *WalletHandler) Transfer(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodPost {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusMethodNotAllowed,
+			"method_not_allowed",
+			"method not allowed",
+		)
+		return
+	}
+
+	sourceWalletID, err := domain.NewWalletID(
+		chi.URLParam(r, "walletID"),
+	)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	idempotencyKey := r.Header.Get(idempotencyKeyHeader)
+	if idempotencyKey == "" {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"empty_idempotency_key",
+			"idempotency key cannot be empty",
+		)
+		return
+	}
+
+	var request transferWalletRequest
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"invalid_request",
+			"invalid request body",
+		)
+		return
+	}
+
+	destinationWalletID, err := domain.NewWalletID(
+		request.DestinationWalletID,
+	)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	transactionID, err := domain.NewTransactionID(request.TransactionID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	journalEntryID, err := domain.NewJournalEntryID(request.JournalEntryID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	sourcePostingID, err := domain.NewPostingID(request.SourcePostingID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	destinationPostingID, err := domain.NewPostingID(
+		request.DestinationPostingID,
+	)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	requestBytes, err := json.Marshal(request)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+	hash := sha256.Sum256(requestBytes)
+
+	postedTransaction, err := h.transferWallet.Execute(
+		r.Context(),
+		wallet.TransferWalletCommand{
+			SourceWalletID:       sourceWalletID,
+			DestinationWalletID:  destinationWalletID,
+			TransactionID:        transactionID,
+			JournalEntryID:       journalEntryID,
+			SourcePostingID:      sourcePostingID,
+			DestinationPostingID: destinationPostingID,
+			AmountMinorUnits:     request.AmountMinorUnits,
+			Description:          request.Description,
+			IdempotencyKey:       idempotencyKey,
+			RequestHash:          hex.EncodeToString(hash[:]),
+		},
+	)
+	if err != nil {
+		if !isClientError(err) && h.logger != nil {
+			h.logger.ErrorContext(
+				r.Context(),
+				"wallet_transfer_failed",
+				slog.String("operation", "wallet.transfer"),
+				slog.String(
+					"request_id",
+					observability.RequestIDFromContext(r.Context()),
+				),
+				slog.Any("error", err),
+			)
+		}
+
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	if h.logger != nil {
+		h.logger.InfoContext(
+			r.Context(),
+			"wallet_transfer_posted",
+			slog.String("operation", "wallet.transfer"),
+			slog.String(
+				"request_id",
+				observability.RequestIDFromContext(r.Context()),
+			),
+			slog.String("source_wallet_id", sourceWalletID.String()),
+			slog.String(
+				"destination_wallet_id",
+				destinationWalletID.String(),
+			),
 			slog.String("transaction_id", postedTransaction.ID().String()),
 		)
 	}

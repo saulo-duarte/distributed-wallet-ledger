@@ -20,6 +20,7 @@ type Dependencies struct {
 	ListWalletsByOwner wallet.ListWalletsByOwnerUseCase
 	GetWalletBalance   wallet.GetWalletBalanceUseCase
 	WithdrawWallet     wallet.WithdrawWalletUseCase
+	TransferWallet     wallet.TransferWalletUseCase
 	PostTransaction    transaction.PostTransactionUseCase
 	GetTransaction     transaction.GetTransactionUseCase
 	ReverseTransaction transaction.ReverseTransactionUseCase
@@ -54,6 +55,11 @@ func New(ctx context.Context, cfg config.Config) (*Dependencies, error) {
 			walletRepository,
 		),
 		WithdrawWallet: wallet.NewWithdrawWalletUseCase(
+			walletRepository,
+			walletRepository,
+			postTransaction,
+		),
+		TransferWallet: wallet.NewTransferWalletUseCase(
 			walletRepository,
 			walletRepository,
 			postTransaction,

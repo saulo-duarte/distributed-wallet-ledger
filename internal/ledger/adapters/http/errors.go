@@ -65,6 +65,10 @@ func mapApplicationError(err error) errorMapping {
 		return errorMapping{http.StatusUnprocessableEntity, "insufficient_funds"}
 	case errors.Is(err, wallet.ErrWithdrawalSameAccount):
 		return errorMapping{http.StatusBadRequest, "withdrawal_same_account"}
+	case errors.Is(err, wallet.ErrTransferSameWallet):
+		return errorMapping{http.StatusBadRequest, "transfer_same_wallet"}
+	case errors.Is(err, wallet.ErrTransferSameAccount):
+		return errorMapping{http.StatusBadRequest, "transfer_same_account"}
 	case errors.Is(err, domain.ErrInvalidID):
 		return errorMapping{http.StatusBadRequest, "invalid_id"}
 	case errors.Is(err, domain.ErrInvalidCurrency):

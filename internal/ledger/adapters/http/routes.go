@@ -82,6 +82,12 @@ func newRouter(
 				walletHandler.Withdraw,
 			)
 		}
+		if walletHandler.transferEnabled {
+			router.Post(
+				"/wallets/{walletID}/transfers",
+				walletHandler.Transfer,
+			)
+		}
 		if walletHandler.queriesEnabled {
 			router.Get("/wallets/{walletID}", walletHandler.Get)
 			router.Get("/owners/{ownerID}/wallets", walletHandler.ListByOwner)

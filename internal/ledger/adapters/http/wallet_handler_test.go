@@ -394,6 +394,124 @@ func TestWalletHandlerWithdrawRequiresIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestWalletHandlerTransferPostsTransfer(t *testing.T) {
+	sourceWallet := newHTTPTestWallet(t, "wallet-source", "owner-001", "account-source")
+	destinationWallet := newHTTPTestWallet(t, "wallet-destination", "owner-002", "account-destination")
+	repository := &fakeWalletRepository{
+		walletsByID: map[domain.WalletID]domain.Wallet{
+			sourceWallet.ID():      sourceWallet,
+			destinationWallet.ID(): destinationWallet,
+		},
+		balancesByAccount: map[domain.AccountID]wallet.LedgerBalanceSnapshot{
+			sourceWallet.LedgerAccountID(): {
+				TotalCredits: 10000,
+			},
+		},
+	}
+	ledger := &fakeHTTPWithdrawalLedgerRepository{}
+	postTransaction := transaction.NewPostTransactionUseCase(ledger)
+	transfer := wallet.NewTransferWalletUseCase(
+		repository,
+		repository,
+		postTransaction,
+	)
+	handler := NewWalletHandlerWithTransfer(
+		wallet.CreateWalletUseCase{},
+		wallet.GetWalletUseCase{},
+		wallet.ListWalletsByOwnerUseCase{},
+		wallet.GetWalletBalanceUseCase{},
+		wallet.WithdrawWalletUseCase{},
+		transfer,
+		nil,
+	)
+	router := NewRouterWithWallet(
+		nil,
+		func(context.Context) error { return nil },
+		nil,
+		nil,
+		handler,
+	)
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/wallets/wallet-source/transfers",
+		bytes.NewBufferString(`{
+			"destination_wallet_id": "wallet-destination",
+			"transaction_id": "transaction-transfer-001",
+			"journal_entry_id": "journal-transfer-001",
+			"source_posting_id": "posting-source-001",
+			"destination_posting_id": "posting-destination-001",
+			"amount_minor_units": 3000,
+			"description": "Wallet transfer"
+		}`),
+	)
+	request.Header.Set(idempotencyKeyHeader, "transfer-key-001")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf(
+			"unexpected status code: got %d, body: %s",
+			recorder.Code,
+			recorder.Body.String(),
+		)
+	}
+
+	var response transactionResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ID != "transaction-transfer-001" {
+		t.Fatalf("unexpected transaction ID: %q", response.ID)
+	}
+	if response.Currency != "BRL" {
+		t.Fatalf("unexpected currency: %q", response.Currency)
+	}
+	if response.Status != "posted" {
+		t.Fatalf("unexpected status: %q", response.Status)
+	}
+
+	postings := ledger.postedTransaction.JournalEntry().Postings()
+	if postings[0].AccountID() != sourceWallet.LedgerAccountID() {
+		t.Fatalf("unexpected source account: %q", postings[0].AccountID())
+	}
+	if postings[0].Direction() != domain.PostingDirectionDebit {
+		t.Fatalf("source direction = %q, want debit", postings[0].Direction())
+	}
+	if postings[1].AccountID() != destinationWallet.LedgerAccountID() {
+		t.Fatalf("unexpected destination account: %q", postings[1].AccountID())
+	}
+	if postings[1].Direction() != domain.PostingDirectionCredit {
+		t.Fatalf("destination direction = %q, want credit", postings[1].Direction())
+	}
+}
+
+func TestWalletHandlerTransferRequiresIdempotencyKey(t *testing.T) {
+	handler := NewWalletHandlerWithTransfer(
+		wallet.CreateWalletUseCase{},
+		wallet.GetWalletUseCase{},
+		wallet.ListWalletsByOwnerUseCase{},
+		wallet.GetWalletBalanceUseCase{},
+		wallet.WithdrawWalletUseCase{},
+		wallet.TransferWalletUseCase{},
+		nil,
+	)
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/wallets/wallet-source/transfers",
+		bytes.NewBufferString(`{}`),
+	)
+	recorder := httptest.NewRecorder()
+
+	handler.Transfer(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected status code: got %d", recorder.Code)
+	}
+}
+
 func newHTTPTestWallet(
 	t *testing.T,
 	id string,
@@ -421,11 +539,13 @@ func newHTTPTestWallet(
 }
 
 type fakeWalletRepository struct {
-	wallet      domain.Wallet
-	wallets     []domain.Wallet
-	balance     wallet.LedgerBalanceSnapshot
-	createCalls int
-	err         error
+	wallet            domain.Wallet
+	wallets           []domain.Wallet
+	walletsByID       map[domain.WalletID]domain.Wallet
+	balancesByAccount map[domain.AccountID]wallet.LedgerBalanceSnapshot
+	balance           wallet.LedgerBalanceSnapshot
+	createCalls       int
+	err               error
 }
 
 func (f *fakeWalletRepository) Create(
@@ -443,10 +563,17 @@ func (f *fakeWalletRepository) Create(
 
 func (f *fakeWalletRepository) GetByID(
 	_ context.Context,
-	_ domain.WalletID,
+	walletID domain.WalletID,
 ) (domain.Wallet, error) {
 	if f.err != nil {
 		return domain.Wallet{}, f.err
+	}
+	if f.walletsByID != nil {
+		foundWallet, ok := f.walletsByID[walletID]
+		if !ok {
+			return domain.Wallet{}, wallet.ErrWalletNotFound
+		}
+		return foundWallet, nil
 	}
 
 	return f.wallet, nil
@@ -469,10 +596,13 @@ func (f *fakeWalletRepository) ListByOwnerID(
 
 func (f *fakeWalletRepository) GetLedgerBalance(
 	_ context.Context,
-	_ domain.AccountID,
+	accountID domain.AccountID,
 ) (wallet.LedgerBalanceSnapshot, error) {
 	if f.err != nil {
 		return wallet.LedgerBalanceSnapshot{}, f.err
+	}
+	if f.balancesByAccount != nil {
+		return f.balancesByAccount[accountID], nil
 	}
 
 	return f.balance, nil

@@ -47,12 +47,13 @@ func run(ctx context.Context) error {
 		dependencies.CreateAccount,
 		logger,
 	)
-	walletHandler := httpadapter.NewWalletHandlerWithWithdrawal(
+	walletHandler := httpadapter.NewWalletHandlerWithTransfer(
 		dependencies.CreateWallet,
 		dependencies.GetWallet,
 		dependencies.ListWalletsByOwner,
 		dependencies.GetWalletBalance,
 		dependencies.WithdrawWallet,
+		dependencies.TransferWallet,
 		logger,
 	)
 	transactionHandler := httpadapter.NewTransactionHandler(
