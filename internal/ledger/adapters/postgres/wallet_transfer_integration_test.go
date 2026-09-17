@@ -17,9 +17,9 @@ import (
 )
 
 func TestTransferWalletIntegrationPersistsAndReplaysIdempotently(t *testing.T) {
-	fixture := newTransferIntegrationFixture(t, "0198f3d0")
-
 	transferID := "0198f3d1-7f0a-7b75-8def-123456789ab4"
+	fixture := newTransferIntegrationFixture(t, "0198f3d0", transferID)
+
 	command := newIntegrationTransferCommand(
 		fixture.sourceWallet,
 		fixture.destinationWallet,
@@ -89,19 +89,26 @@ func TestTransferWalletIntegrationPersistsAndReplaysIdempotently(t *testing.T) {
 }
 
 func TestTransferWalletIntegrationSerializesConcurrentTransfers(t *testing.T) {
-	fixture := newTransferIntegrationFixture(t, "0198f3e0")
+	firstTransferID := "0198f3e1-7f0a-7b76-8def-123456789ab5"
+	secondTransferID := "0198f3e2-7f0a-7b77-8def-123456789ab6"
+	fixture := newTransferIntegrationFixture(
+		t,
+		"0198f3e0",
+		firstTransferID,
+		secondTransferID,
+	)
 
 	commands := []wallet.TransferWalletCommand{
 		newIntegrationTransferCommand(
 			fixture.sourceWallet,
 			fixture.destinationWallet,
-			"0198f3e1-7f0a-7b76-8def-123456789ab5",
+			firstTransferID,
 			7000,
 		),
 		newIntegrationTransferCommand(
 			fixture.sourceWallet,
 			fixture.destinationWallet,
-			"0198f3e2-7f0a-7b77-8def-123456789ab6",
+			secondTransferID,
 			7000,
 		),
 	}
@@ -187,6 +194,7 @@ type transferIntegrationFixture struct {
 func newTransferIntegrationFixture(
 	t *testing.T,
 	baseID string,
+	transferIDs ...string,
 ) transferIntegrationFixture {
 	t.Helper()
 
@@ -234,6 +242,9 @@ func newTransferIntegrationFixture(
 	depositID := baseID + "-7f0a-7b78-8def-123456789ab7"
 
 	cleanupLedgerTransaction(t, pool, depositID)
+	for _, transferID := range transferIDs {
+		cleanupLedgerTransaction(t, pool, transferID)
+	}
 	cleanupWallet(t, pool, sourceWallet.ID().String())
 	cleanupWallet(t, pool, destinationWallet.ID().String())
 	cleanupAccount(t, pool, sourceAccount.Code())
@@ -241,6 +252,9 @@ func newTransferIntegrationFixture(
 	cleanupAccount(t, pool, clearingAccount.Code())
 	t.Cleanup(func() {
 		cleanupLedgerTransaction(t, pool, depositID)
+		for _, transferID := range transferIDs {
+			cleanupLedgerTransaction(t, pool, transferID)
+		}
 		cleanupWallet(t, pool, sourceWallet.ID().String())
 		cleanupWallet(t, pool, destinationWallet.ID().String())
 		cleanupAccount(t, pool, sourceAccount.Code())

@@ -33,7 +33,19 @@ const getLedgerBalance = `-- name: GetLedgerBalance :one
               END
           ),
           0
-      )::BIGINT AS total_credits
+      )::BIGINT AS total_credits,
+
+      COALESCE(
+          (
+              SELECT SUM(wh.amount_minor_units)
+              FROM wallet_holds wh
+              JOIN wallets w ON w.id = wh.wallet_id
+              WHERE w.ledger_account_id = $1
+                AND wh.status = 'authorized'
+                AND wh.expires_at > NOW()
+          ),
+          0
+      )::BIGINT AS active_holds
   FROM postings
   WHERE account_id = $1
 `
@@ -41,11 +53,12 @@ const getLedgerBalance = `-- name: GetLedgerBalance :one
 type GetLedgerBalanceRow struct {
 	TotalDebits  int64 `json:"total_debits"`
 	TotalCredits int64 `json:"total_credits"`
+	ActiveHolds  int64 `json:"active_holds"`
 }
 
-func (q *Queries) GetLedgerBalance(ctx context.Context, accountID pgtype.UUID) (GetLedgerBalanceRow, error) {
-	row := q.db.QueryRow(ctx, getLedgerBalance, accountID)
+func (q *Queries) GetLedgerBalance(ctx context.Context, ledgerAccountID pgtype.UUID) (GetLedgerBalanceRow, error) {
+	row := q.db.QueryRow(ctx, getLedgerBalance, ledgerAccountID)
 	var i GetLedgerBalanceRow
-	err := row.Scan(&i.TotalDebits, &i.TotalCredits)
+	err := row.Scan(&i.TotalDebits, &i.TotalCredits, &i.ActiveHolds)
 	return i, err
 }

@@ -113,3 +113,22 @@ func (id OwnerID) String() string {
 func (id OwnerID) IsZero() bool {
 	return id == ""
 }
+
+type HoldID string
+
+func NewHoldID(id string) (HoldID, error) {
+	cleanID := strings.TrimSpace(id)
+	if cleanID == "" {
+		return "", ErrInvalidID
+	}
+
+	return HoldID(cleanID), nil
+}
+
+func (id HoldID) String() string {
+	return string(id)
+}
+
+func (id HoldID) IsZero() bool {
+	return id == ""
+}

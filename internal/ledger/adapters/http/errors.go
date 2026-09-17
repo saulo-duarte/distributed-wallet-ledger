@@ -59,16 +59,40 @@ func mapApplicationError(err error) errorMapping {
 		return errorMapping{http.StatusNotFound, "transaction_not_found"}
 	case errors.Is(err, wallet.ErrWalletNotFound):
 		return errorMapping{http.StatusNotFound, "wallet_not_found"}
+	case errors.Is(err, wallet.ErrHoldNotFound):
+		return errorMapping{http.StatusNotFound, "hold_not_found"}
+	case errors.Is(err, wallet.ErrHoldIdempotencyConflict):
+		return errorMapping{http.StatusConflict, "hold_idempotency_conflict"}
+	case errors.Is(err, wallet.ErrCaptureSameAccount):
+		return errorMapping{http.StatusBadRequest, "capture_same_account"}
+	case errors.Is(err, wallet.ErrEmptyIdempotencyKey):
+		return errorMapping{http.StatusBadRequest, "empty_idempotency_key"}
+	case errors.Is(err, wallet.ErrEmptyRequestHash):
+		return errorMapping{http.StatusBadRequest, "empty_request_hash"}
 	case errors.Is(err, wallet.ErrInsufficientFunds):
 		return errorMapping{http.StatusUnprocessableEntity, "insufficient_funds"}
 	case errors.Is(err, transaction.ErrInsufficientBalance):
 		return errorMapping{http.StatusUnprocessableEntity, "insufficient_funds"}
 	case errors.Is(err, wallet.ErrWithdrawalSameAccount):
 		return errorMapping{http.StatusBadRequest, "withdrawal_same_account"}
+	case errors.Is(err, wallet.ErrDepositSameAccount):
+		return errorMapping{http.StatusBadRequest, "deposit_same_account"}
 	case errors.Is(err, wallet.ErrTransferSameWallet):
 		return errorMapping{http.StatusBadRequest, "transfer_same_wallet"}
 	case errors.Is(err, wallet.ErrTransferSameAccount):
 		return errorMapping{http.StatusBadRequest, "transfer_same_account"}
+	case errors.Is(err, domain.ErrInvalidHoldStatus):
+		return errorMapping{http.StatusBadRequest, "invalid_hold_status"}
+	case errors.Is(err, domain.ErrHoldNotAuthorized):
+		return errorMapping{http.StatusConflict, "hold_not_authorized"}
+	case errors.Is(err, domain.ErrHoldExpired):
+		return errorMapping{http.StatusConflict, "hold_expired"}
+	case errors.Is(err, domain.ErrHoldNotExpired):
+		return errorMapping{http.StatusConflict, "hold_not_expired"}
+	case errors.Is(err, domain.ErrInvalidHoldTimestamp):
+		return errorMapping{http.StatusBadRequest, "invalid_hold_timestamp"}
+	case errors.Is(err, domain.ErrInvalidHoldExpiration):
+		return errorMapping{http.StatusBadRequest, "invalid_hold_expiration"}
 	case errors.Is(err, domain.ErrInvalidID):
 		return errorMapping{http.StatusBadRequest, "invalid_id"}
 	case errors.Is(err, domain.ErrInvalidCurrency):

@@ -19,8 +19,13 @@ type Dependencies struct {
 	GetWallet          wallet.GetWalletUseCase
 	ListWalletsByOwner wallet.ListWalletsByOwnerUseCase
 	GetWalletBalance   wallet.GetWalletBalanceUseCase
+	DepositWallet      wallet.DepositWalletUseCase
 	WithdrawWallet     wallet.WithdrawWalletUseCase
 	TransferWallet     wallet.TransferWalletUseCase
+	CreateHold         wallet.CreateHoldUseCase
+	ReleaseHold        wallet.ReleaseHoldUseCase
+	ExpireHold         wallet.ExpireHoldUseCase
+	CaptureHold        wallet.CaptureHoldUseCase
 	PostTransaction    transaction.PostTransactionUseCase
 	GetTransaction     transaction.GetTransactionUseCase
 	ReverseTransaction transaction.ReverseTransactionUseCase
@@ -41,6 +46,11 @@ func New(ctx context.Context, cfg config.Config) (*Dependencies, error) {
 	accountRepository := postgres.NewAccountRepository(queries)
 	walletRepository := postgres.NewWalletRepository(queries)
 	transactionRepository := postgres.NewTransactionRepository(pool, queries)
+	holdRepository := postgres.NewHoldRepository(
+		pool,
+		queries,
+		transactionRepository,
+	)
 	postTransaction := transaction.NewPostTransactionUseCase(
 		transactionRepository,
 	)
@@ -54,6 +64,10 @@ func New(ctx context.Context, cfg config.Config) (*Dependencies, error) {
 			walletRepository,
 			walletRepository,
 		),
+		DepositWallet: wallet.NewDepositWalletUseCase(
+			walletRepository,
+			postTransaction,
+		),
 		WithdrawWallet: wallet.NewWithdrawWalletUseCase(
 			walletRepository,
 			walletRepository,
@@ -63,6 +77,17 @@ func New(ctx context.Context, cfg config.Config) (*Dependencies, error) {
 			walletRepository,
 			walletRepository,
 			postTransaction,
+		),
+		CreateHold: wallet.NewCreateHoldUseCase(
+			walletRepository,
+			holdRepository,
+		),
+		ReleaseHold: wallet.NewReleaseHoldUseCase(holdRepository),
+		ExpireHold:  wallet.NewExpireHoldUseCase(holdRepository),
+		CaptureHold: wallet.NewCaptureHoldUseCase(
+			walletRepository,
+			holdRepository,
+			holdRepository,
 		),
 		PostTransaction:    postTransaction,
 		GetTransaction:     transaction.NewGetTransactionUseCase(transactionRepository),

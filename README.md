@@ -39,7 +39,7 @@ flowchart LR
     PostgreSQL --> DB[(PostgreSQL)]
 ```
 
-PostgreSQL is the source of truth in Phase 1. There is no distributed messaging, read-model database, or microservice split yet.
+PostgreSQL remains the source of truth for the Ledger and Wallet. There is no distributed messaging, read-model database, or microservice split yet.
 
 The current composition root loads local configuration, opens the PostgreSQL pool, creates the SQLC queries, and wires the account and transaction use cases into the HTTP API. The API uses `net/http` handlers, `chi` routing, and shared response/error helpers.
 
@@ -54,7 +54,7 @@ The current composition root loads local configuration, opens the PostgreSQL poo
 
 ## Current Phase
 
-**Phase 1 — Ledger Core**
+**Phase 2 — Wallet**
 
 The Ledger Core vertical slice is implemented: accounts, balanced transactions, journal entries, postings, transaction lookup, account entry listing, reversal, idempotency, PostgreSQL persistence, and integration tests.
 
@@ -91,7 +91,7 @@ make test-integration
 
 This starts PostgreSQL, waits for its healthcheck, applies migrations, and runs tests with the `integration` build tag. The `migrate` CLI must be available on `PATH`.
 
-The API command initializes configuration and dependency injection, starts the HTTP server, and exposes the current Ledger Core endpoints.
+The API command initializes configuration and dependency injection, starts the HTTP server, and exposes the current Ledger Core and Wallet endpoints.
 
 Useful commands are documented in the [local development guide](docs/README.md).
 
@@ -114,7 +114,7 @@ observability/               reserved for observability configuration when neede
 
 ## Documentation
 
-Start at [docs/README.md](docs/README.md). The current scope is in [Phase 1](docs/phases/phase-01-ledger-core.md), and the initial architecture decision is [ADR 0001](docs/adr/0001-postgresql-as-ledger-source-of-truth.md).
+Start at [docs/README.md](docs/README.md). The current scope is in [Phase 2](docs/phases/phase-02-wallet.md), and the initial architecture decision is [ADR 0001](docs/adr/0001-postgresql-as-ledger-source-of-truth.md).
 
 ## Architecture Decisions
 

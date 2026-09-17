@@ -44,6 +44,18 @@ FROM wallets
 WHERE ledger_account_id = $1
 FOR UPDATE;
 
+-- name: LockWalletByID :one
+SELECT
+    id,
+    owner_id,
+    ledger_account_id,
+    currency,
+    status,
+    created_at
+FROM wallets
+WHERE id = $1
+FOR UPDATE;
+
 -- name: ListWalletsByOwnerID :many
 SELECT
     id,

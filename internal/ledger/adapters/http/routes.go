@@ -76,6 +76,30 @@ func newRouter(
 		if walletHandler.balanceEnabled {
 			router.Get("/wallets/{walletID}/balance", walletHandler.GetBalance)
 		}
+		if walletHandler.depositEnabled {
+			router.Post(
+				"/wallets/{walletID}/deposits",
+				walletHandler.Deposit,
+			)
+		}
+		if walletHandler.holdEnabled {
+			router.Post(
+				"/wallets/{walletID}/holds",
+				walletHandler.CreateHold,
+			)
+			router.Post(
+				"/holds/{holdID}/release",
+				walletHandler.ReleaseHold,
+			)
+			router.Post(
+				"/holds/{holdID}/expire",
+				walletHandler.ExpireHold,
+			)
+			router.Post(
+				"/holds/{holdID}/capture",
+				walletHandler.CaptureHold,
+			)
+		}
 		if walletHandler.withdrawEnabled {
 			router.Post(
 				"/wallets/{walletID}/withdrawals",

@@ -42,4 +42,12 @@ var (
 	ErrWalletClosed           = errors.New("wallet is closed")
 	ErrWalletAlreadySuspended = errors.New("wallet is already suspended")
 	ErrWalletAlreadyClosed    = errors.New("wallet is already closed")
+
+	// Hold Errors
+	ErrInvalidHoldStatus     = errors.New("invalid hold status")
+	ErrHoldNotAuthorized     = errors.New("hold is not authorized")
+	ErrHoldExpired           = errors.New("hold has expired")
+	ErrHoldNotExpired        = errors.New("hold has not expired")
+	ErrInvalidHoldTimestamp  = errors.New("invalid hold timestamp")
+	ErrInvalidHoldExpiration = errors.New("hold expiration must be after creation")
 )

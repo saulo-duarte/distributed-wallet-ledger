@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"financial-ledger/internal/ledger/application/wallet"
 	"financial-ledger/internal/ledger/domain"
@@ -20,12 +21,19 @@ type WalletHandler struct {
 	getWallet       wallet.GetWalletUseCase
 	listWallets     wallet.ListWalletsByOwnerUseCase
 	getBalance      wallet.GetWalletBalanceUseCase
+	depositWallet   wallet.DepositWalletUseCase
 	withdrawWallet  wallet.WithdrawWalletUseCase
 	transferWallet  wallet.TransferWalletUseCase
+	createHold      wallet.CreateHoldUseCase
+	releaseHold     wallet.ReleaseHoldUseCase
+	expireHold      wallet.ExpireHoldUseCase
+	captureHold     wallet.CaptureHoldUseCase
 	queriesEnabled  bool
 	balanceEnabled  bool
+	depositEnabled  bool
 	withdrawEnabled bool
 	transferEnabled bool
+	holdEnabled     bool
 	logger          *slog.Logger
 }
 
@@ -37,8 +45,10 @@ func NewWalletHandler(
 		createWallet:    createWallet,
 		queriesEnabled:  false,
 		balanceEnabled:  false,
+		depositEnabled:  false,
 		withdrawEnabled: false,
 		transferEnabled: false,
+		holdEnabled:     false,
 		logger:          logger,
 	}
 }
@@ -55,8 +65,10 @@ func NewWalletHandlerWithQueries(
 		listWallets:     listWallets,
 		queriesEnabled:  true,
 		balanceEnabled:  false,
+		depositEnabled:  false,
 		withdrawEnabled: false,
 		transferEnabled: false,
+		holdEnabled:     false,
 		logger:          logger,
 	}
 }
@@ -75,8 +87,10 @@ func NewWalletHandlerWithBalance(
 		getBalance:      getBalance,
 		queriesEnabled:  true,
 		balanceEnabled:  true,
+		depositEnabled:  false,
 		withdrawEnabled: false,
 		transferEnabled: false,
+		holdEnabled:     false,
 		logger:          logger,
 	}
 }
@@ -97,8 +111,10 @@ func NewWalletHandlerWithWithdrawal(
 		withdrawWallet:  withdrawWallet,
 		queriesEnabled:  true,
 		balanceEnabled:  true,
+		depositEnabled:  false,
 		withdrawEnabled: true,
 		transferEnabled: false,
+		holdEnabled:     false,
 		logger:          logger,
 	}
 }
@@ -112,17 +128,78 @@ func NewWalletHandlerWithTransfer(
 	transferWallet wallet.TransferWalletUseCase,
 	logger *slog.Logger,
 ) *WalletHandler {
+	return NewWalletHandlerWithOperations(
+		createWallet,
+		getWallet,
+		listWallets,
+		getBalance,
+		wallet.DepositWalletUseCase{},
+		withdrawWallet,
+		transferWallet,
+		logger,
+	)
+}
+
+func NewWalletHandlerWithOperations(
+	createWallet wallet.CreateWalletUseCase,
+	getWallet wallet.GetWalletUseCase,
+	listWallets wallet.ListWalletsByOwnerUseCase,
+	getBalance wallet.GetWalletBalanceUseCase,
+	depositWallet wallet.DepositWalletUseCase,
+	withdrawWallet wallet.WithdrawWalletUseCase,
+	transferWallet wallet.TransferWalletUseCase,
+	logger *slog.Logger,
+) *WalletHandler {
 	return &WalletHandler{
 		createWallet:    createWallet,
 		getWallet:       getWallet,
 		listWallets:     listWallets,
 		getBalance:      getBalance,
+		depositWallet:   depositWallet,
 		withdrawWallet:  withdrawWallet,
 		transferWallet:  transferWallet,
 		queriesEnabled:  true,
 		balanceEnabled:  true,
+		depositEnabled:  true,
 		withdrawEnabled: true,
 		transferEnabled: true,
+		holdEnabled:     false,
+		logger:          logger,
+	}
+}
+
+func NewWalletHandlerWithHolds(
+	createWallet wallet.CreateWalletUseCase,
+	getWallet wallet.GetWalletUseCase,
+	listWallets wallet.ListWalletsByOwnerUseCase,
+	getBalance wallet.GetWalletBalanceUseCase,
+	depositWallet wallet.DepositWalletUseCase,
+	withdrawWallet wallet.WithdrawWalletUseCase,
+	transferWallet wallet.TransferWalletUseCase,
+	createHold wallet.CreateHoldUseCase,
+	releaseHold wallet.ReleaseHoldUseCase,
+	expireHold wallet.ExpireHoldUseCase,
+	captureHold wallet.CaptureHoldUseCase,
+	logger *slog.Logger,
+) *WalletHandler {
+	return &WalletHandler{
+		createWallet:    createWallet,
+		getWallet:       getWallet,
+		listWallets:     listWallets,
+		getBalance:      getBalance,
+		depositWallet:   depositWallet,
+		withdrawWallet:  withdrawWallet,
+		transferWallet:  transferWallet,
+		createHold:      createHold,
+		releaseHold:     releaseHold,
+		expireHold:      expireHold,
+		captureHold:     captureHold,
+		queriesEnabled:  true,
+		balanceEnabled:  true,
+		depositEnabled:  true,
+		withdrawEnabled: true,
+		transferEnabled: true,
+		holdEnabled:     true,
 		logger:          logger,
 	}
 }
@@ -159,6 +236,16 @@ type withdrawWalletRequest struct {
 	Description       string `json:"description"`
 }
 
+type depositWalletRequest struct {
+	ClearingAccountID string `json:"clearing_account_id"`
+	TransactionID     string `json:"transaction_id"`
+	JournalEntryID    string `json:"journal_entry_id"`
+	ClearingPostingID string `json:"clearing_posting_id"`
+	WalletPostingID   string `json:"wallet_posting_id"`
+	AmountMinorUnits  int64  `json:"amount_minor_units"`
+	Description       string `json:"description"`
+}
+
 type transferWalletRequest struct {
 	DestinationWalletID  string `json:"destination_wallet_id"`
 	TransactionID        string `json:"transaction_id"`
@@ -167,6 +254,35 @@ type transferWalletRequest struct {
 	DestinationPostingID string `json:"destination_posting_id"`
 	AmountMinorUnits     int64  `json:"amount_minor_units"`
 	Description          string `json:"description"`
+}
+
+type createHoldRequest struct {
+	ID               string    `json:"id"`
+	AmountMinorUnits int64     `json:"amount_minor_units"`
+	ExpiresAt        time.Time `json:"expires_at"`
+}
+
+type captureHoldRequest struct {
+	SettlementAccountID string `json:"settlement_account_id"`
+	TransactionID       string `json:"transaction_id"`
+	JournalEntryID      string `json:"journal_entry_id"`
+	WalletPostingID     string `json:"wallet_posting_id"`
+	SettlementPostingID string `json:"settlement_posting_id"`
+	Description         string `json:"description"`
+}
+
+type holdResponse struct {
+	ID               string    `json:"id"`
+	WalletID         string    `json:"wallet_id"`
+	AmountMinorUnits int64     `json:"amount_minor_units"`
+	Currency         string    `json:"currency"`
+	Status           string    `json:"status"`
+	ExpiresAt        time.Time `json:"expires_at"`
+}
+
+type captureHoldResponse struct {
+	Hold        holdResponse        `json:"hold"`
+	Transaction transactionResponse `json:"transaction"`
 }
 
 func (h *WalletHandler) GetBalance(
@@ -203,6 +319,282 @@ func (h *WalletHandler) GetBalance(
 		Currency:                   balance.Currency.String(),
 		LedgerBalanceMinorUnits:    balance.LedgerBalanceMinorUnits,
 		AvailableBalanceMinorUnits: balance.AvailableBalanceMinorUnits,
+	})
+}
+
+func (h *WalletHandler) CreateHold(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodPost {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusMethodNotAllowed,
+			"method_not_allowed",
+			"method not allowed",
+		)
+		return
+	}
+
+	walletID, err := domain.NewWalletID(chi.URLParam(r, "walletID"))
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	idempotencyKey := r.Header.Get(idempotencyKeyHeader)
+	if idempotencyKey == "" {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"empty_idempotency_key",
+			"idempotency key cannot be empty",
+		)
+		return
+	}
+
+	var request createHoldRequest
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"invalid_request",
+			"invalid request body",
+		)
+		return
+	}
+
+	holdID, err := domain.NewHoldID(request.ID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	requestBytes, err := json.Marshal(request)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+	hash := sha256.Sum256(requestBytes)
+
+	createdHold, err := h.createHold.Execute(
+		r.Context(),
+		wallet.CreateHoldCommand{
+			ID:               holdID,
+			WalletID:         walletID,
+			AmountMinorUnits: request.AmountMinorUnits,
+			ExpiresAt:        request.ExpiresAt,
+			IdempotencyKey:   idempotencyKey,
+			RequestHash:      hex.EncodeToString(hash[:]),
+		},
+	)
+	if err != nil {
+		if !isClientError(err) && h.logger != nil {
+			h.logger.ErrorContext(
+				r.Context(),
+				"wallet_hold_creation_failed",
+				slog.String("operation", "wallet.hold.create"),
+				slog.String(
+					"request_id",
+					observability.RequestIDFromContext(r.Context()),
+				),
+				slog.Any("error", err),
+			)
+		}
+
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, toHoldResponse(createdHold))
+}
+
+func (h *WalletHandler) ReleaseHold(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodPost {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusMethodNotAllowed,
+			"method_not_allowed",
+			"method not allowed",
+		)
+		return
+	}
+
+	holdID, err := domain.NewHoldID(chi.URLParam(r, "holdID"))
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	releasedHold, err := h.releaseHold.Execute(r.Context(), holdID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toHoldResponse(releasedHold))
+}
+
+func (h *WalletHandler) ExpireHold(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodPost {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusMethodNotAllowed,
+			"method_not_allowed",
+			"method not allowed",
+		)
+		return
+	}
+
+	holdID, err := domain.NewHoldID(chi.URLParam(r, "holdID"))
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	expiredHold, err := h.expireHold.Execute(r.Context(), holdID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toHoldResponse(expiredHold))
+}
+
+func (h *WalletHandler) CaptureHold(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodPost {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusMethodNotAllowed,
+			"method_not_allowed",
+			"method not allowed",
+		)
+		return
+	}
+
+	holdID, err := domain.NewHoldID(chi.URLParam(r, "holdID"))
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	idempotencyKey := r.Header.Get(idempotencyKeyHeader)
+	if idempotencyKey == "" {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"empty_idempotency_key",
+			"idempotency key cannot be empty",
+		)
+		return
+	}
+
+	var request captureHoldRequest
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"invalid_request",
+			"invalid request body",
+		)
+		return
+	}
+
+	settlementAccountID, err := domain.NewAccountID(
+		request.SettlementAccountID,
+	)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+	transactionID, err := domain.NewTransactionID(request.TransactionID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+	journalEntryID, err := domain.NewJournalEntryID(request.JournalEntryID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+	walletPostingID, err := domain.NewPostingID(request.WalletPostingID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+	settlementPostingID, err := domain.NewPostingID(
+		request.SettlementPostingID,
+	)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	requestBytes, err := json.Marshal(request)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+	hash := sha256.Sum256(requestBytes)
+
+	result, err := h.captureHold.Execute(
+		r.Context(),
+		wallet.CaptureHoldCommand{
+			HoldID:              holdID,
+			SettlementAccountID: settlementAccountID,
+			TransactionID:       transactionID,
+			JournalEntryID:      journalEntryID,
+			WalletPostingID:     walletPostingID,
+			SettlementPostingID: settlementPostingID,
+			Description:         request.Description,
+			IdempotencyKey:      idempotencyKey,
+			RequestHash:         hex.EncodeToString(hash[:]),
+		},
+	)
+	if err != nil {
+		if !isClientError(err) && h.logger != nil {
+			h.logger.ErrorContext(
+				r.Context(),
+				"wallet_hold_capture_failed",
+				slog.String("operation", "wallet.hold.capture"),
+				slog.String(
+					"request_id",
+					observability.RequestIDFromContext(r.Context()),
+				),
+				slog.Any("error", err),
+			)
+		}
+
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, captureHoldResponse{
+		Hold: toHoldResponse(result.Hold),
+		Transaction: transactionResponse{
+			ID:             result.Transaction.ID().String(),
+			JournalEntryID: result.Transaction.JournalEntry().ID().String(),
+			Description:    result.Transaction.Description(),
+			Currency:       result.Transaction.JournalEntry().Currency().String(),
+			Status:         "posted",
+		},
 	})
 }
 
@@ -326,6 +718,148 @@ func (h *WalletHandler) Withdraw(
 			r.Context(),
 			"wallet_withdrawal_posted",
 			slog.String("operation", "wallet.withdraw"),
+			slog.String(
+				"request_id",
+				observability.RequestIDFromContext(r.Context()),
+			),
+			slog.String("wallet_id", walletID.String()),
+			slog.String("transaction_id", postedTransaction.ID().String()),
+		)
+	}
+
+	httpx.WriteJSON(
+		w,
+		http.StatusCreated,
+		transactionResponse{
+			ID:             postedTransaction.ID().String(),
+			JournalEntryID: postedTransaction.JournalEntry().ID().String(),
+			Description:    postedTransaction.Description(),
+			Currency:       postedTransaction.JournalEntry().Currency().String(),
+			Status:         "posted",
+		},
+	)
+}
+
+func (h *WalletHandler) Deposit(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodPost {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusMethodNotAllowed,
+			"method_not_allowed",
+			"method not allowed",
+		)
+		return
+	}
+
+	walletID, err := domain.NewWalletID(chi.URLParam(r, "walletID"))
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	idempotencyKey := r.Header.Get(idempotencyKeyHeader)
+	if idempotencyKey == "" {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"empty_idempotency_key",
+			"idempotency key cannot be empty",
+		)
+		return
+	}
+
+	var request depositWalletRequest
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		writeHTTPError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"invalid_request",
+			"invalid request body",
+		)
+		return
+	}
+
+	clearingAccountID, err := domain.NewAccountID(request.ClearingAccountID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	transactionID, err := domain.NewTransactionID(request.TransactionID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	journalEntryID, err := domain.NewJournalEntryID(request.JournalEntryID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	clearingPostingID, err := domain.NewPostingID(request.ClearingPostingID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	walletPostingID, err := domain.NewPostingID(request.WalletPostingID)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	requestBytes, err := json.Marshal(request)
+	if err != nil {
+		writeApplicationError(w, r, err)
+		return
+	}
+	hash := sha256.Sum256(requestBytes)
+
+	postedTransaction, err := h.depositWallet.Execute(
+		r.Context(),
+		wallet.DepositWalletCommand{
+			WalletID:          walletID,
+			ClearingAccountID: clearingAccountID,
+			TransactionID:     transactionID,
+			JournalEntryID:    journalEntryID,
+			ClearingPostingID: clearingPostingID,
+			WalletPostingID:   walletPostingID,
+			AmountMinorUnits:  request.AmountMinorUnits,
+			Description:       request.Description,
+			IdempotencyKey:    idempotencyKey,
+			RequestHash:       hex.EncodeToString(hash[:]),
+		},
+	)
+	if err != nil {
+		if !isClientError(err) && h.logger != nil {
+			h.logger.ErrorContext(
+				r.Context(),
+				"wallet_deposit_failed",
+				slog.String("operation", "wallet.deposit"),
+				slog.String(
+					"request_id",
+					observability.RequestIDFromContext(r.Context()),
+				),
+				slog.Any("error", err),
+			)
+		}
+
+		writeApplicationError(w, r, err)
+		return
+	}
+
+	if h.logger != nil {
+		h.logger.InfoContext(
+			r.Context(),
+			"wallet_deposit_posted",
+			slog.String("operation", "wallet.deposit"),
 			slog.String(
 				"request_id",
 				observability.RequestIDFromContext(r.Context()),
@@ -676,5 +1210,16 @@ func toWalletResponse(foundWallet domain.Wallet) walletResponse {
 		LedgerAccountID: foundWallet.LedgerAccountID().String(),
 		Currency:        foundWallet.Currency().String(),
 		Status:          string(foundWallet.Status()),
+	}
+}
+
+func toHoldResponse(foundHold domain.Hold) holdResponse {
+	return holdResponse{
+		ID:               foundHold.ID().String(),
+		WalletID:         foundHold.WalletID().String(),
+		AmountMinorUnits: foundHold.Amount().AmountMinorUnits(),
+		Currency:         foundHold.Amount().Currency().String(),
+		Status:           string(foundHold.Status()),
+		ExpiresAt:        foundHold.ExpiresAt(),
 	}
 }

@@ -5,6 +5,7 @@ sql:
     schema:
       - migrations/000001_initial_schema.up.sql
       - migrations/000002_create_wallets.up.sql
+      - migrations/000003_create_wallet_holds.up.sql
     queries:
       - internal/ledger/adapters/postgres/queries
     gen:

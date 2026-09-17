@@ -39,7 +39,7 @@ Credit EXTERNAL_CLEARING  BRL 100.00
 
 The external destination is associated with a separate payment instruction. A payment rail, provider, or authorized settlement operator may later accept, reject, or settle that instruction. This integration result is operational state; it is not a replacement for, or mutation of, the original journal entry.
 
-If the external operation fails after the local posting, the correction is another balanced compensating entry. If the business must wait for authorization before moving funds, a future wallet or workflow model may introduce holds and capture instead of posting the final movement immediately.
+If the external operation fails after the local posting, the correction is another balanced compensating entry. If the business must wait for authorization before moving funds, the Wallet can reserve funds with a hold and later capture them through a final balanced Ledger entry. Provider authorization and distributed settlement workflows remain future concerns.
 
 This external payment flow is planned for later phases. Phase 1 models only local Ledger accounts and does not implement providers, queues, settlement, or reconciliation.
 

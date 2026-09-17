@@ -201,6 +201,129 @@ func (r *TransactionRepository) Post(
 	return nil
 }
 
+// postInTransaction persists a valid Ledger transaction using an existing
+// database transaction. Callers that coordinate another aggregate must lock
+// their records before invoking this method and commit both changes together.
+func (r *TransactionRepository) postInTransaction(
+	ctx context.Context,
+	queries *db.Queries,
+	postedTransaction domain.Transaction,
+	idempotencyKey string,
+	requestHash string,
+) error {
+	lockedWalletAccounts, err := r.lockWalletAccounts(
+		ctx,
+		queries,
+		postedTransaction,
+	)
+	if err != nil {
+		return err
+	}
+
+	replayed, err := checkIdempotencyWithQueries(
+		ctx,
+		queries,
+		postedTransaction,
+		idempotencyKey,
+		requestHash,
+	)
+	if err != nil {
+		return err
+	}
+	if replayed {
+		return nil
+	}
+
+	if err := r.validateWalletBalances(
+		ctx,
+		queries,
+		postedTransaction,
+		lockedWalletAccounts,
+	); err != nil {
+		return err
+	}
+
+	transactionID, err := transactionIDToUUID(postedTransaction.ID())
+	if err != nil {
+		return err
+	}
+
+	var reversesTransactionID pgtype.UUID
+	if originalTransactionID := postedTransaction.ReversesTransactionID(); originalTransactionID != nil {
+		reversesTransactionID, err = transactionIDToUUID(*originalTransactionID)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := queries.CreateTransaction(
+		ctx,
+		db.CreateTransactionParams{
+			ID:                    transactionID,
+			Description:           postedTransaction.Description(),
+			ReversesTransactionID: reversesTransactionID,
+		},
+	); err != nil {
+		return fmt.Errorf("create transaction: %w", err)
+	}
+
+	journalEntry := postedTransaction.JournalEntry()
+	journalEntryID, err := journalEntryIDToUUID(journalEntry.ID())
+	if err != nil {
+		return err
+	}
+
+	if err := queries.CreateJournalEntry(
+		ctx,
+		db.CreateJournalEntryParams{
+			ID:            journalEntryID,
+			TransactionID: transactionID,
+			Currency:      journalEntry.Currency().String(),
+		},
+	); err != nil {
+		return fmt.Errorf("create journal entry: %w", err)
+	}
+
+	for _, posting := range journalEntry.Postings() {
+		postingID, err := postingIDToUUID(posting.ID())
+		if err != nil {
+			return err
+		}
+
+		accountID, err := accountIDToUUID(posting.AccountID())
+		if err != nil {
+			return err
+		}
+
+		if err := queries.CreatePosting(
+			ctx,
+			db.CreatePostingParams{
+				ID:               postingID,
+				JournalEntryID:   journalEntryID,
+				AccountID:        accountID,
+				Direction:        string(posting.Direction()),
+				AmountMinorUnits: posting.Amount().AmountMinorUnits(),
+			},
+		); err != nil {
+			return fmt.Errorf("create posting: %w", err)
+		}
+	}
+
+	if err := queries.CreateIdempotencyKey(
+		ctx,
+		db.CreateIdempotencyKeyParams{
+			Scope:          transactionPostingScope,
+			IdempotencyKey: idempotencyKey,
+			RequestHash:    requestHash,
+			TransactionID:  transactionID,
+		},
+	); err != nil {
+		return fmt.Errorf("create idempotency key: %w", err)
+	}
+
+	return nil
+}
+
 func (r *TransactionRepository) checkIdempotency(
 	ctx context.Context,
 	postedTransaction domain.Transaction,
@@ -318,6 +441,7 @@ func (r *TransactionRepository) validateWalletBalances(
 
 		projectedBalance := balance.TotalCredits -
 			balance.TotalDebits +
+			(-balance.ActiveHolds) +
 			deltasByAccount[accountKey]
 		if projectedBalance < 0 {
 			return transaction.ErrInsufficientBalance

@@ -56,3 +56,16 @@ type Wallet struct {
 	Status          string             `json:"status"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
+
+type WalletHold struct {
+	ID               pgtype.UUID        `json:"id"`
+	WalletID         pgtype.UUID        `json:"wallet_id"`
+	AmountMinorUnits int64              `json:"amount_minor_units"`
+	Currency         string             `json:"currency"`
+	Status           string             `json:"status"`
+	IdempotencyKey   string             `json:"idempotency_key"`
+	RequestHash      string             `json:"request_hash"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}

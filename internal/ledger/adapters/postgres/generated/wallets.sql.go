@@ -129,6 +129,33 @@ func (q *Queries) ListWalletsByOwnerID(ctx context.Context, ownerID string) ([]W
 	return items, nil
 }
 
+const lockWalletByID = `-- name: LockWalletByID :one
+SELECT
+    id,
+    owner_id,
+    ledger_account_id,
+    currency,
+    status,
+    created_at
+FROM wallets
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockWalletByID(ctx context.Context, id pgtype.UUID) (Wallet, error) {
+	row := q.db.QueryRow(ctx, lockWalletByID, id)
+	var i Wallet
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.LedgerAccountID,
+		&i.Currency,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const lockWalletByLedgerAccountID = `-- name: LockWalletByLedgerAccountID :one
 SELECT
     id,

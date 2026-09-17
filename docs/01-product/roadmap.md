@@ -14,4 +14,4 @@ The roadmap describes learning goals, not irreversible technology commitments. E
 | 8 — Reliability | Make behavior observable and test failure | Distributed behavior cannot be understood from logs alone | Tracing, metrics, logs, chaos, load and failure testing | OpenTelemetry, load/chaos tools |
 | Future — Investments | Explore another product on the ledger | Investment products introduce new instruments and settlement concerns | Brokerage and investment-domain modeling | To be decided from concrete needs |
 
-Only Phase 1 is current. Nothing in later phases is implemented by this repository setup.
+Phase 1 is complete and Phase 2 — Wallet is currently in progress. CQRS, distributed messaging, capture workflows, and platform infrastructure remain planned rather than implemented.

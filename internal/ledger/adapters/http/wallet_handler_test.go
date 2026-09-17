@@ -394,6 +394,114 @@ func TestWalletHandlerWithdrawRequiresIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestWalletHandlerDepositPostsDeposit(t *testing.T) {
+	foundWallet := newHTTPTestWallet(t, "wallet-001", "owner-001", "account-wallet")
+	repository := &fakeWalletRepository{wallet: foundWallet}
+	ledger := &fakeHTTPWithdrawalLedgerRepository{}
+	postTransaction := transaction.NewPostTransactionUseCase(ledger)
+	deposit := wallet.NewDepositWalletUseCase(repository, postTransaction)
+	handler := NewWalletHandlerWithOperations(
+		wallet.CreateWalletUseCase{},
+		wallet.NewGetWalletUseCase(repository),
+		wallet.NewListWalletsByOwnerUseCase(repository),
+		wallet.NewGetWalletBalanceUseCase(repository, repository),
+		deposit,
+		wallet.WithdrawWalletUseCase{},
+		wallet.TransferWalletUseCase{},
+		nil,
+	)
+	router := NewRouterWithWallet(
+		nil,
+		func(context.Context) error { return nil },
+		nil,
+		nil,
+		handler,
+	)
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/wallets/wallet-001/deposits",
+		bytes.NewBufferString(`{
+			"clearing_account_id": "clearing-account-001",
+			"transaction_id": "transaction-deposit-001",
+			"journal_entry_id": "journal-deposit-001",
+			"clearing_posting_id": "posting-clearing-001",
+			"wallet_posting_id": "posting-wallet-001",
+			"amount_minor_units": 3000,
+			"description": "Wallet deposit"
+		}`),
+	)
+	request.Header.Set(idempotencyKeyHeader, "deposit-key-001")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf(
+			"unexpected status code: got %d, body: %s",
+			recorder.Code,
+			recorder.Body.String(),
+		)
+	}
+
+	var response transactionResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ID != "transaction-deposit-001" {
+		t.Fatalf("unexpected transaction ID: %q", response.ID)
+	}
+	if response.Currency != "BRL" {
+		t.Fatalf("unexpected currency: %q", response.Currency)
+	}
+	if response.Status != "posted" {
+		t.Fatalf("unexpected status: %q", response.Status)
+	}
+
+	if ledger.calls != 1 {
+		t.Fatalf("ledger Post() calls = %d, want 1", ledger.calls)
+	}
+	postings := ledger.postedTransaction.JournalEntry().Postings()
+	if postings[0].AccountID() != domain.AccountID("clearing-account-001") {
+		t.Fatalf("unexpected clearing account: %q", postings[0].AccountID())
+	}
+	if postings[0].Direction() != domain.PostingDirectionDebit {
+		t.Fatalf("clearing direction = %q, want debit", postings[0].Direction())
+	}
+	if postings[1].AccountID() != foundWallet.LedgerAccountID() {
+		t.Fatalf("unexpected wallet account: %q", postings[1].AccountID())
+	}
+	if postings[1].Direction() != domain.PostingDirectionCredit {
+		t.Fatalf("wallet direction = %q, want credit", postings[1].Direction())
+	}
+}
+
+func TestWalletHandlerDepositRequiresIdempotencyKey(t *testing.T) {
+	handler := NewWalletHandlerWithOperations(
+		wallet.CreateWalletUseCase{},
+		wallet.GetWalletUseCase{},
+		wallet.ListWalletsByOwnerUseCase{},
+		wallet.GetWalletBalanceUseCase{},
+		wallet.DepositWalletUseCase{},
+		wallet.WithdrawWalletUseCase{},
+		wallet.TransferWalletUseCase{},
+		nil,
+	)
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/wallets/wallet-001/deposits",
+		bytes.NewBufferString(`{}`),
+	)
+	recorder := httptest.NewRecorder()
+
+	handler.Deposit(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected status code: got %d", recorder.Code)
+	}
+}
+
 func TestWalletHandlerTransferPostsTransfer(t *testing.T) {
 	sourceWallet := newHTTPTestWallet(t, "wallet-source", "owner-001", "account-source")
 	destinationWallet := newHTTPTestWallet(t, "wallet-destination", "owner-002", "account-destination")

@@ -202,8 +202,9 @@ func (r *WalletRepository) GetLedgerBalance(
 	}
 
 	return wallet.LedgerBalanceSnapshot{
-		TotalDebits:  balance.TotalDebits,
-		TotalCredits: balance.TotalCredits,
+		TotalDebits:           balance.TotalDebits,
+		TotalCredits:          balance.TotalCredits,
+		ActiveHoldsMinorUnits: balance.ActiveHolds,
 	}, nil
 }
 

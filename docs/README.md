@@ -20,6 +20,7 @@ This directory contains durable project documentation. The root [README](../READ
 
 - [Current architecture](03-architecture/overview.md)
 - [Phase 1 — Ledger Core](phases/phase-01-ledger-core.md)
+- [Phase 2 — Wallet](phases/phase-02-wallet.md)
 
 ## Decisions
 
@@ -37,4 +38,4 @@ flowchart LR
     Migrate --> Verify[make sqlc-generate / make test]
 ```
 
-The detailed Phase 1 specification is the authority for what is planned and what is implemented.
+Phase 1 is complete. The Phase 2 specification is now the authority for the Wallet behavior currently implemented.

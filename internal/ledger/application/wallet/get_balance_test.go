@@ -14,8 +14,9 @@ func TestCalculateWalletBalanceReturnsCreditMinusDebit(t *testing.T) {
 	balance, err := CalculateWalletBalance(
 		foundWallet,
 		LedgerBalanceSnapshot{
-			TotalDebits:  2500,
-			TotalCredits: 10000,
+			TotalDebits:           2500,
+			TotalCredits:          10000,
+			ActiveHoldsMinorUnits: 1500,
 		},
 	)
 	if err != nil {
@@ -28,9 +29,9 @@ func TestCalculateWalletBalanceReturnsCreditMinusDebit(t *testing.T) {
 			balance.LedgerBalanceMinorUnits,
 		)
 	}
-	if balance.AvailableBalanceMinorUnits != 7500 {
+	if balance.AvailableBalanceMinorUnits != 6000 {
 		t.Fatalf(
-			"unexpected available balance: got %d, want 7500",
+			"unexpected available balance: got %d, want 6000",
 			balance.AvailableBalanceMinorUnits,
 		)
 	}
