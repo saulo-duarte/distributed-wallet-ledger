@@ -2,8 +2,11 @@ version: "2"
 
 sql:
   - engine: postgresql
-    schema: migrations/000001_initial_schema.up.sql
-    queries: internal/ledger/adapters/postgres/queries
+    schema:
+      - migrations/000001_initial_schema.up.sql
+      - migrations/000002_create_wallets.up.sql
+    queries:
+      - internal/ledger/adapters/postgres/queries
     gen:
       go:
         package: db

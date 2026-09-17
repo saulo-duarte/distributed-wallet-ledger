@@ -62,22 +62,35 @@ func (r *AccountRepository) ListEntries(
 		return nil, err
 	}
 
-	var rows []db.AccountEntry
+	var rows []accountEntryRow
 	if cursor == nil {
-		rows, err = r.queries.ListAccountEntriesFirst(
+		generatedRows, queryErr := r.queries.ListAccountEntriesFirst(
 			ctx,
 			db.ListAccountEntriesFirstParams{
 				AccountID: databaseAccountID,
 				Limit:     int32(limit),
 			},
 		)
+		err = queryErr
+		for _, row := range generatedRows {
+			rows = append(rows, accountEntryRow{
+				PostingID:        row.PostingID,
+				JournalEntryID:   row.JournalEntryID,
+				TransactionID:    row.TransactionID,
+				Description:      row.Description,
+				Currency:         row.Currency,
+				Direction:        row.Direction,
+				AmountMinorUnits: row.AmountMinorUnits,
+				CreatedAt:        row.CreatedAt,
+			})
+		}
 	} else {
 		postingID, conversionErr := postingIDToUUID(cursor.PostingID)
 		if conversionErr != nil {
 			return nil, conversionErr
 		}
 
-		rows, err = r.queries.ListAccountEntriesAfter(
+		generatedRows, queryErr := r.queries.ListAccountEntriesAfter(
 			ctx,
 			db.ListAccountEntriesAfterParams{
 				AccountID: databaseAccountID,
@@ -85,10 +98,23 @@ func (r *AccountRepository) ListEntries(
 					Time:  cursor.CreatedAt,
 					Valid: true,
 				},
-				PostingID: postingID,
-				Limit:     int32(limit),
+				ID:    postingID,
+				Limit: int32(limit),
 			},
 		)
+		err = queryErr
+		for _, row := range generatedRows {
+			rows = append(rows, accountEntryRow{
+				PostingID:        row.PostingID,
+				JournalEntryID:   row.JournalEntryID,
+				TransactionID:    row.TransactionID,
+				Description:      row.Description,
+				Currency:         row.Currency,
+				Direction:        row.Direction,
+				AmountMinorUnits: row.AmountMinorUnits,
+				CreatedAt:        row.CreatedAt,
+			})
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list account entries: %w", err)
@@ -106,7 +132,18 @@ func (r *AccountRepository) ListEntries(
 	return entries, nil
 }
 
-func mapAccountEntry(row db.AccountEntry) (account.AccountEntry, error) {
+type accountEntryRow struct {
+	PostingID        pgtype.UUID
+	JournalEntryID   pgtype.UUID
+	TransactionID    pgtype.UUID
+	Description      string
+	Currency         string
+	Direction        string
+	AmountMinorUnits int64
+	CreatedAt        pgtype.Timestamptz
+}
+
+func mapAccountEntry(row accountEntryRow) (account.AccountEntry, error) {
 	postingID, err := uuidToPostingID(row.PostingID)
 	if err != nil {
 		return account.AccountEntry{}, err

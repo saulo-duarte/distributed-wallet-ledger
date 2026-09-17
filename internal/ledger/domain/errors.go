@@ -34,4 +34,12 @@ var (
 	ErrCannotReverseReversal           = errors.New("a reversal transaction cannot be reversed")
 	ErrReversalSameTransactionID       = errors.New("reversal must use a different transaction id")
 	ErrInvalidReversalPostingIDCount   = errors.New("reversal must provide one posting id per original posting")
+
+	// Wallet errors
+	ErrInvalidWalletStatus    = errors.New("invalid wallet status")
+	ErrEmptyWalletOwnerID     = errors.New("wallet owner ID cannot be empty")
+	ErrWalletSuspended        = errors.New("wallet is suspended")
+	ErrWalletClosed           = errors.New("wallet is closed")
+	ErrWalletAlreadySuspended = errors.New("wallet is already suspended")
+	ErrWalletAlreadyClosed    = errors.New("wallet is already closed")
 )

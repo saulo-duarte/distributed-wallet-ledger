@@ -75,3 +75,41 @@ func (id PostingID) String() string {
 func (id PostingID) IsZero() bool {
 	return id == ""
 }
+
+type WalletID string
+
+func NewWalletID(id string) (WalletID, error) {
+	cleanID := strings.TrimSpace(id)
+	if cleanID == "" {
+		return "", ErrInvalidID
+	}
+
+	return WalletID(cleanID), nil
+}
+
+func (id WalletID) String() string {
+	return string(id)
+}
+
+func (id WalletID) IsZero() bool {
+	return id == ""
+}
+
+type OwnerID string
+
+func NewOwnerID(id string) (OwnerID, error) {
+	cleanID := strings.TrimSpace(id)
+	if cleanID == "" {
+		return "", ErrInvalidID
+	}
+
+	return OwnerID(cleanID), nil
+}
+
+func (id OwnerID) String() string {
+	return string(id)
+}
+
+func (id OwnerID) IsZero() bool {
+	return id == ""
+}

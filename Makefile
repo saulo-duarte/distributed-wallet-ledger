@@ -32,7 +32,7 @@ fmt:
 	gofmt -w ./cmd ./internal
 
 sqlc-generate:
-	sqlc generate
+	scripts\sqlc-generate.cmd
 
 infra-up:
 	docker compose up -d --wait postgres
