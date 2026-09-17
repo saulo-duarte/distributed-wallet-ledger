@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	db "financial-ledger/internal/ledger/adapters/postgres/generated"
 	"financial-ledger/internal/ledger/application/transaction"
@@ -67,6 +68,38 @@ func (r *TransactionRepository) Post(
 	}()
 
 	queries := r.queries.WithTx(databaseTransaction)
+
+	lockedWalletAccounts, err := r.lockWalletAccounts(
+		ctx,
+		queries,
+		postedTransaction,
+	)
+	if err != nil {
+		return err
+	}
+
+	replayed, err = checkIdempotencyWithQueries(
+		ctx,
+		queries,
+		postedTransaction,
+		idempotencyKey,
+		requestHash,
+	)
+	if err != nil {
+		return err
+	}
+	if replayed {
+		return nil
+	}
+
+	if err := r.validateWalletBalances(
+		ctx,
+		queries,
+		postedTransaction,
+		lockedWalletAccounts,
+	); err != nil {
+		return err
+	}
 
 	transactionID, err := transactionIDToUUID(postedTransaction.ID())
 	if err != nil {
@@ -174,7 +207,23 @@ func (r *TransactionRepository) checkIdempotency(
 	idempotencyKey string,
 	requestHash string,
 ) (bool, error) {
-	existing, err := r.queries.GetIdempotencyKey(
+	return checkIdempotencyWithQueries(
+		ctx,
+		r.queries,
+		postedTransaction,
+		idempotencyKey,
+		requestHash,
+	)
+}
+
+func checkIdempotencyWithQueries(
+	ctx context.Context,
+	queries *db.Queries,
+	postedTransaction domain.Transaction,
+	idempotencyKey string,
+	requestHash string,
+) (bool, error) {
+	existing, err := queries.GetIdempotencyKey(
 		ctx,
 		db.GetIdempotencyKeyParams{
 			Scope:          transactionPostingScope,
@@ -198,6 +247,84 @@ func (r *TransactionRepository) checkIdempotency(
 	}
 
 	return true, nil
+}
+
+func (r *TransactionRepository) lockWalletAccounts(
+	ctx context.Context,
+	queries *db.Queries,
+	postedTransaction domain.Transaction,
+) (map[string]pgtype.UUID, error) {
+	accountIDs := make(map[string]pgtype.UUID)
+
+	for _, posting := range postedTransaction.JournalEntry().Postings() {
+		accountID, err := accountIDToUUID(posting.AccountID())
+		if err != nil {
+			return nil, err
+		}
+
+		accountIDs[posting.AccountID().String()] = accountID
+	}
+
+	accountKeys := make([]string, 0, len(accountIDs))
+	for accountKey := range accountIDs {
+		accountKeys = append(accountKeys, accountKey)
+	}
+	sort.Strings(accountKeys)
+
+	lockedWalletAccounts := make(map[string]pgtype.UUID)
+	for _, accountKey := range accountKeys {
+		accountID := accountIDs[accountKey]
+		_, err := queries.LockWalletByLedgerAccountID(ctx, accountID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				continue
+			}
+
+			return nil, fmt.Errorf("lock wallet account %q: %w", accountKey, err)
+		}
+
+		lockedWalletAccounts[accountKey] = accountID
+	}
+
+	return lockedWalletAccounts, nil
+}
+
+// validateWalletBalances reads balances only after the corresponding Wallet
+// rows have been locked by the current PostgreSQL transaction.
+func (r *TransactionRepository) validateWalletBalances(
+	ctx context.Context,
+	queries *db.Queries,
+	postedTransaction domain.Transaction,
+	lockedWalletAccounts map[string]pgtype.UUID,
+) error {
+	deltasByAccount := make(map[string]int64)
+
+	for _, posting := range postedTransaction.JournalEntry().Postings() {
+
+		delta := posting.Amount().AmountMinorUnits()
+		if posting.Direction() == domain.PostingDirectionDebit {
+			delta = -delta
+		}
+
+		key := posting.AccountID().String()
+		deltasByAccount[key] += delta
+	}
+
+	for accountKey, accountID := range lockedWalletAccounts {
+		balance, err := queries.GetLedgerBalance(ctx, accountID)
+		if err != nil {
+			return fmt.Errorf("get locked wallet balance: %w", err)
+		}
+
+		projectedBalance := balance.TotalCredits -
+			balance.TotalDebits +
+			deltasByAccount[accountKey]
+		if projectedBalance < 0 {
+			return transaction.ErrInsufficientBalance
+		}
+	}
+
+	return nil
 }
 
 func (r *TransactionRepository) Get(
