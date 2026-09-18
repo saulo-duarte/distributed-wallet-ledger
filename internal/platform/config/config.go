@@ -14,20 +14,28 @@ const (
 	defaultMigrationsPath = "migrations"
 	defaultLogLevel       = "info"
 	defaultLogFormat      = "text"
-	defaultDynamoEndpoint = "http://localhost:4566"
-	defaultDynamoRegion   = "us-east-1"
-	defaultDynamoTable    = "goledge_projections"
+	defaultDynamoEndpoint        = "http://localhost:4566"
+	defaultDynamoRegion          = "us-east-1"
+	defaultDynamoTable           = "goledge_projections"
+	defaultAWSEndpoint           = "http://localhost:4566"
+	defaultAWSRegion             = "us-east-1"
+	defaultSNSTopicARN           = "arn:aws:sns:us-east-1:000000000000:ledger-events"
+	defaultSQSWalletBalanceQueue = "http://localhost:4566/000000000000/wallet-balance-projections-queue"
 )
 
 type Config struct {
-	APIAddress       string
-	DatabaseURL      string
-	MigrationsPath   string
-	LogLevel         string
-	LogFormat        string
-	DynamoDBEndpoint string
-	DynamoDBRegion   string
-	DynamoDBTable    string
+	APIAddress                string
+	DatabaseURL               string
+	MigrationsPath            string
+	LogLevel                  string
+	LogFormat                 string
+	DynamoDBEndpoint          string
+	DynamoDBRegion            string
+	DynamoDBTable             string
+	AWSEndpoint               string
+	AWSRegion                 string
+	SNSTopicARN               string
+	SQSWalletBalanceQueueURL  string
 }
 
 func Load() (Config, error) {
@@ -51,6 +59,14 @@ func LoadFromEnv(getenv func(string) (string, bool)) (Config, error) {
 	dynamoEndpoint := valueOrDefault(getenv, "DYNAMODB_ENDPOINT", defaultDynamoEndpoint)
 	dynamoRegion := valueOrDefault(getenv, "DYNAMODB_REGION", defaultDynamoRegion)
 	dynamoTable := valueOrDefault(getenv, "DYNAMODB_TABLE", defaultDynamoTable)
+	awsEndpoint := valueOrDefault(getenv, "AWS_ENDPOINT", defaultAWSEndpoint)
+	awsRegion := valueOrDefault(getenv, "AWS_REGION", defaultAWSRegion)
+	snsTopicARN := valueOrDefault(getenv, "SNS_TOPIC_ARN", defaultSNSTopicARN)
+	sqsWalletBalanceQueueURL := valueOrDefault(
+		getenv,
+		"SQS_WALLET_BALANCE_QUEUE_URL",
+		defaultSQSWalletBalanceQueue,
+	)
 
 	if databaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL cannot be empty")
@@ -65,14 +81,18 @@ func LoadFromEnv(getenv func(string) (string, bool)) (Config, error) {
 	}
 
 	return Config{
-		APIAddress:       apiAddress,
-		DatabaseURL:      databaseURL,
-		MigrationsPath:   migrationsPath,
-		LogLevel:         logLevel,
-		LogFormat:        logFormat,
-		DynamoDBEndpoint: dynamoEndpoint,
-		DynamoDBRegion:   dynamoRegion,
-		DynamoDBTable:    dynamoTable,
+		APIAddress:               apiAddress,
+		DatabaseURL:              databaseURL,
+		MigrationsPath:           migrationsPath,
+		LogLevel:                 logLevel,
+		LogFormat:                logFormat,
+		DynamoDBEndpoint:         dynamoEndpoint,
+		DynamoDBRegion:           dynamoRegion,
+		DynamoDBTable:            dynamoTable,
+		AWSEndpoint:              awsEndpoint,
+		AWSRegion:                awsRegion,
+		SNSTopicARN:              snsTopicARN,
+		SQSWalletBalanceQueueURL: sqsWalletBalanceQueueURL,
 	}, nil
 }
 
