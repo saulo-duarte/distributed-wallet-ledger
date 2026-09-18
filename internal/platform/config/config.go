@@ -13,13 +13,21 @@ const (
 	defaultAPIAddress     = ":8080"
 	defaultMigrationsPath = "migrations"
 	defaultLogLevel       = "info"
+	defaultLogFormat      = "text"
+	defaultDynamoEndpoint = "http://localhost:4566"
+	defaultDynamoRegion   = "us-east-1"
+	defaultDynamoTable    = "goledge_projections"
 )
 
 type Config struct {
-	APIAddress     string
-	DatabaseURL    string
-	MigrationsPath string
-	LogLevel       string
+	APIAddress       string
+	DatabaseURL      string
+	MigrationsPath   string
+	LogLevel         string
+	LogFormat        string
+	DynamoDBEndpoint string
+	DynamoDBRegion   string
+	DynamoDBTable    string
 }
 
 func Load() (Config, error) {
@@ -39,6 +47,10 @@ func LoadFromEnv(getenv func(string) (string, bool)) (Config, error) {
 		defaultMigrationsPath,
 	)
 	logLevel := valueOrDefault(getenv, "LOG_LEVEL", defaultLogLevel)
+	logFormat := valueOrDefault(getenv, "LOG_FORMAT", defaultLogFormat)
+	dynamoEndpoint := valueOrDefault(getenv, "DYNAMODB_ENDPOINT", defaultDynamoEndpoint)
+	dynamoRegion := valueOrDefault(getenv, "DYNAMODB_REGION", defaultDynamoRegion)
+	dynamoTable := valueOrDefault(getenv, "DYNAMODB_TABLE", defaultDynamoTable)
 
 	if databaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL cannot be empty")
@@ -53,10 +65,14 @@ func LoadFromEnv(getenv func(string) (string, bool)) (Config, error) {
 	}
 
 	return Config{
-		APIAddress:     apiAddress,
-		DatabaseURL:    databaseURL,
-		MigrationsPath: migrationsPath,
-		LogLevel:       logLevel,
+		APIAddress:       apiAddress,
+		DatabaseURL:      databaseURL,
+		MigrationsPath:   migrationsPath,
+		LogLevel:         logLevel,
+		LogFormat:        logFormat,
+		DynamoDBEndpoint: dynamoEndpoint,
+		DynamoDBRegion:   dynamoRegion,
+		DynamoDBTable:    dynamoTable,
 	}, nil
 }
 

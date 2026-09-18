@@ -16,5 +16,21 @@ services:
       timeout: 5s
       retries: 10
 
+  ministack:
+    image: ministackorg/ministack:latest
+    restart: unless-stopped
+    environment:
+      - SERVICES=dynamodb
+    ports:
+      - "${DYNAMODB_PORT:-4566}:4566"
+    volumes:
+      - ministack_data:/var/lib/ministack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4566/_ministack/health || curl -f http://localhost:4566/health || exit 0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
+  ministack_data:

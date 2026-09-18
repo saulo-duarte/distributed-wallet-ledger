@@ -10,6 +10,7 @@ import (
 
 type LoggingConfig struct {
 	Level     string
+	Format    string
 	AddSource bool
 	Writer    io.Writer
 }
@@ -25,13 +26,17 @@ func NewLogger(cfg LoggingConfig) (*slog.Logger, error) {
 		writer = os.Stdout
 	}
 
-	handler := slog.NewJSONHandler(
-		writer,
-		&slog.HandlerOptions{
-			Level:     level,
-			AddSource: cfg.AddSource,
-		},
-	)
+	opts := &slog.HandlerOptions{
+		Level:     level,
+		AddSource: cfg.AddSource,
+	}
+
+	var handler slog.Handler
+	if strings.ToLower(strings.TrimSpace(cfg.Format)) == "text" {
+		handler = slog.NewTextHandler(writer, opts)
+	} else {
+		handler = slog.NewJSONHandler(writer, opts)
+	}
 
 	return slog.New(handler), nil
 }

@@ -44,6 +44,7 @@ func TestNewLoggerWritesJSON(t *testing.T) {
 
 	logger, err := NewLogger(LoggingConfig{
 		Level:  "info",
+		Format: "json",
 		Writer: &output,
 	})
 	if err != nil {
