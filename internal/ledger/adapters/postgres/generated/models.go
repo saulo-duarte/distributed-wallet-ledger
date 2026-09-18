@@ -32,6 +32,20 @@ type JournalEntry struct {
 	PostedAt      pgtype.Timestamptz `json:"posted_at"`
 }
 
+type OutboxEvent struct {
+	ID            pgtype.UUID        `json:"id"`
+	AggregateType string             `json:"aggregate_type"`
+	AggregateID   string             `json:"aggregate_id"`
+	EventType     string             `json:"event_type"`
+	Payload       []byte             `json:"payload"`
+	Status        string             `json:"status"`
+	RetryCount    int32              `json:"retry_count"`
+	LastError     pgtype.Text        `json:"last_error"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ProcessedAt   pgtype.Timestamptz `json:"processed_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Posting struct {
 	ID               pgtype.UUID        `json:"id"`
 	JournalEntryID   pgtype.UUID        `json:"journal_entry_id"`

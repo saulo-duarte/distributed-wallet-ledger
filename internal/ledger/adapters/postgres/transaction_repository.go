@@ -2,14 +2,18 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	db "financial-ledger/internal/ledger/adapters/postgres/generated"
 	"financial-ledger/internal/ledger/application/transaction"
+	"financial-ledger/internal/ledger/application/wallet"
 	"financial-ledger/internal/ledger/domain"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -167,6 +171,14 @@ func (r *TransactionRepository) Post(
 		}
 	}
 
+	if err := r.createOutboxEvents(
+		ctx,
+		queries,
+		lockedWalletAccounts,
+	); err != nil {
+		return err
+	}
+
 	if err := queries.CreateIdempotencyKey(
 		ctx,
 		db.CreateIdempotencyKeyParams{
@@ -309,6 +321,14 @@ func (r *TransactionRepository) postInTransaction(
 		}
 	}
 
+	if err := r.createOutboxEvents(
+		ctx,
+		queries,
+		lockedWalletAccounts,
+	); err != nil {
+		return err
+	}
+
 	if err := queries.CreateIdempotencyKey(
 		ctx,
 		db.CreateIdempotencyKeyParams{
@@ -376,7 +396,7 @@ func (r *TransactionRepository) lockWalletAccounts(
 	ctx context.Context,
 	queries *db.Queries,
 	postedTransaction domain.Transaction,
-) (map[string]pgtype.UUID, error) {
+) (map[string]db.Wallet, error) {
 	accountIDs := make(map[string]pgtype.UUID)
 
 	for _, posting := range postedTransaction.JournalEntry().Postings() {
@@ -394,10 +414,10 @@ func (r *TransactionRepository) lockWalletAccounts(
 	}
 	sort.Strings(accountKeys)
 
-	lockedWalletAccounts := make(map[string]pgtype.UUID)
+	lockedWalletAccounts := make(map[string]db.Wallet)
 	for _, accountKey := range accountKeys {
 		accountID := accountIDs[accountKey]
-		_, err := queries.LockWalletByLedgerAccountID(ctx, accountID)
+		w, err := queries.LockWalletByLedgerAccountID(ctx, accountID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -406,10 +426,61 @@ func (r *TransactionRepository) lockWalletAccounts(
 			return nil, fmt.Errorf("lock wallet account %q: %w", accountKey, err)
 		}
 
-		lockedWalletAccounts[accountKey] = accountID
+		lockedWalletAccounts[accountKey] = w
 	}
 
 	return lockedWalletAccounts, nil
+}
+
+func (r *TransactionRepository) createOutboxEvents(
+	ctx context.Context,
+	queries *db.Queries,
+	lockedWalletAccounts map[string]db.Wallet,
+) error {
+	seenWallets := make(map[string]struct{})
+	now := time.Now().UTC()
+
+	for _, w := range lockedWalletAccounts {
+		walletUUID := w.ID.String()
+		if _, seen := seenWallets[walletUUID]; seen {
+			continue
+		}
+		seenWallets[walletUUID] = struct{}{}
+
+		payload, err := json.Marshal(wallet.WalletBalanceUpdatedPayload{
+			WalletID: walletUUID,
+		})
+		if err != nil {
+			return fmt.Errorf("marshal outbox payload: %w", err)
+		}
+
+		eventUUID, err := uuid.NewV7()
+		if err != nil {
+			return fmt.Errorf("generate event uuid: %w", err)
+		}
+
+		var eventID pgtype.UUID
+		if err := eventID.Scan(eventUUID.String()); err != nil {
+			return fmt.Errorf("scan event uuid: %w", err)
+		}
+
+		_, err = queries.CreateOutboxEvent(ctx, db.CreateOutboxEventParams{
+			ID:            eventID,
+			AggregateType: "wallet",
+			AggregateID:   walletUUID,
+			EventType:     wallet.WalletBalanceUpdatedEventType,
+			Payload:       payload,
+			Status:        string(domain.EventStatusPending),
+			RetryCount:    0,
+			CreatedAt:     pgtype.Timestamptz{Time: now, Valid: true},
+			UpdatedAt:     pgtype.Timestamptz{Time: now, Valid: true},
+		})
+		if err != nil {
+			return fmt.Errorf("create outbox event for wallet %s: %w", walletUUID, err)
+		}
+	}
+
+	return nil
 }
 
 // validateWalletBalances reads balances only after the corresponding Wallet
@@ -418,7 +489,7 @@ func (r *TransactionRepository) validateWalletBalances(
 	ctx context.Context,
 	queries *db.Queries,
 	postedTransaction domain.Transaction,
-	lockedWalletAccounts map[string]pgtype.UUID,
+	lockedWalletAccounts map[string]db.Wallet,
 ) error {
 	deltasByAccount := make(map[string]int64)
 
@@ -433,8 +504,8 @@ func (r *TransactionRepository) validateWalletBalances(
 		deltasByAccount[key] += delta
 	}
 
-	for accountKey, accountID := range lockedWalletAccounts {
-		balance, err := queries.GetLedgerBalance(ctx, accountID)
+	for accountKey, w := range lockedWalletAccounts {
+		balance, err := queries.GetLedgerBalance(ctx, w.LedgerAccountID)
 		if err != nil {
 			return fmt.Errorf("get locked wallet balance: %w", err)
 		}
