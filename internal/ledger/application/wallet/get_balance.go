@@ -2,13 +2,17 @@ package wallet
 
 import (
 	"context"
+	"log/slog"
+	"time"
 
 	"financial-ledger/internal/ledger/domain"
 )
 
 type GetWalletBalanceUseCase struct {
-	wallets  WalletReader
-	balances WalletBalanceReader
+	wallets     WalletReader
+	balances    WalletBalanceReader
+	projections WalletBalanceProjectionRepository
+	logger      *slog.Logger
 }
 
 func NewGetWalletBalanceUseCase(
@@ -21,12 +25,53 @@ func NewGetWalletBalanceUseCase(
 	}
 }
 
+func NewGetWalletBalanceUseCaseWithProjection(
+	wallets WalletReader,
+	balances WalletBalanceReader,
+	projections WalletBalanceProjectionRepository,
+	logger *slog.Logger,
+) GetWalletBalanceUseCase {
+	return GetWalletBalanceUseCase{
+		wallets:     wallets,
+		balances:    balances,
+		projections: projections,
+		logger:      logger,
+	}
+}
+
 func (uc GetWalletBalanceUseCase) Execute(
 	ctx context.Context,
 	walletID domain.WalletID,
 ) (WalletBalance, error) {
 	if walletID.IsZero() {
 		return WalletBalance{}, domain.ErrInvalidID
+	}
+
+	if uc.projections != nil {
+		readCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+		balance, err := uc.projections.GetWalletBalance(readCtx, walletID)
+		cancel()
+		if err == nil {
+			if uc.logger != nil {
+				uc.logger.DebugContext(
+					ctx,
+					"wallet_balance_source",
+					slog.String("source", "dynamodb"),
+					slog.String("wallet_id", walletID.String()),
+					slog.Int64("available_balance", balance.AvailableBalanceMinorUnits),
+				)
+			}
+			return balance, nil
+		}
+	}
+
+	if uc.logger != nil {
+		uc.logger.DebugContext(
+			ctx,
+			"wallet_balance_source",
+			slog.String("source", "postgresql"),
+			slog.String("wallet_id", walletID.String()),
+		)
 	}
 
 	foundWallet, err := uc.wallets.GetByID(ctx, walletID)
@@ -42,5 +87,14 @@ func (uc GetWalletBalanceUseCase) Execute(
 		return WalletBalance{}, err
 	}
 
-	return CalculateWalletBalance(foundWallet, snapshot)
+	balance, err := CalculateWalletBalance(foundWallet, snapshot)
+	if err != nil {
+		return WalletBalance{}, err
+	}
+
+	if uc.projections != nil {
+		_ = uc.projections.SaveWalletBalance(ctx, balance)
+	}
+
+	return balance, nil
 }

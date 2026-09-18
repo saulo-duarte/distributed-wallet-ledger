@@ -117,6 +117,65 @@ func TestGetWalletBalanceUseCasePropagatesBalanceError(t *testing.T) {
 	}
 }
 
+func TestGetWalletBalanceUseCaseReturnsFromDynamoDB(t *testing.T) {
+	foundWallet := newTestWallet(t, "wallet-001", "owner-001", "account-001")
+	wallets := &fakeWalletReader{wallet: foundWallet}
+	balances := &fakeWalletBalanceReader{}
+	projections := &fakeWalletBalanceProjectionRepository{
+		savedBalance: WalletBalance{
+			WalletID:                   foundWallet.ID(),
+			Currency:                   foundWallet.Currency(),
+			LedgerBalanceMinorUnits:    9900,
+			AvailableBalanceMinorUnits: 9900,
+		},
+	}
+
+	useCase := NewGetWalletBalanceUseCaseWithProjection(wallets, balances, projections, nil)
+
+	balance, err := useCase.Execute(context.Background(), foundWallet.ID())
+	if err != nil {
+		t.Fatalf("get wallet balance: %v", err)
+	}
+
+	if balance.AvailableBalanceMinorUnits != 9900 {
+		t.Fatalf("expected balance from dynamodb 9900, got %d", balance.AvailableBalanceMinorUnits)
+	}
+	if balances.calls != 0 {
+		t.Fatalf("expected 0 calls to postgres balance reader, got %d", balances.calls)
+	}
+}
+
+func TestGetWalletBalanceUseCaseFallbacksToPostgresWhenDynamoMisses(t *testing.T) {
+	foundWallet := newTestWallet(t, "wallet-001", "owner-001", "account-001")
+	wallets := &fakeWalletReader{wallet: foundWallet}
+	balances := &fakeWalletBalanceReader{
+		snapshot: LedgerBalanceSnapshot{
+			TotalDebits:  1000,
+			TotalCredits: 5000,
+		},
+	}
+	projections := &fakeWalletBalanceProjectionRepository{
+		err: ErrWalletNotFound,
+	}
+
+	useCase := NewGetWalletBalanceUseCaseWithProjection(wallets, balances, projections, nil)
+
+	balance, err := useCase.Execute(context.Background(), foundWallet.ID())
+	if err != nil {
+		t.Fatalf("get wallet balance: %v", err)
+	}
+
+	if balance.AvailableBalanceMinorUnits != 4000 {
+		t.Fatalf("expected balance from postgres 4000, got %d", balance.AvailableBalanceMinorUnits)
+	}
+	if balances.calls != 1 {
+		t.Fatalf("expected 1 call to postgres balance reader, got %d", balances.calls)
+	}
+	if projections.calls != 1 {
+		t.Fatalf("expected 1 call to save warm-up projection in dynamodb, got %d", projections.calls)
+	}
+}
+
 type fakeWalletBalanceReader struct {
 	snapshot  LedgerBalanceSnapshot
 	accountID domain.AccountID

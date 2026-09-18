@@ -30,6 +30,7 @@ type WithdrawWalletUseCase struct {
 	wallets         WalletReader
 	balances        WalletBalanceReader
 	transactionPost TransactionPoster
+	projector       WalletBalanceProjectorPort
 }
 
 func NewWithdrawWalletUseCase(
@@ -41,6 +42,20 @@ func NewWithdrawWalletUseCase(
 		wallets:         wallets,
 		balances:        balances,
 		transactionPost: transactionPost,
+	}
+}
+
+func NewWithdrawWalletUseCaseWithProjector(
+	wallets WalletReader,
+	balances WalletBalanceReader,
+	transactionPost TransactionPoster,
+	projector WalletBalanceProjectorPort,
+) WithdrawWalletUseCase {
+	return WithdrawWalletUseCase{
+		wallets:         wallets,
+		balances:        balances,
+		transactionPost: transactionPost,
+		projector:       projector,
 	}
 }
 
@@ -129,6 +144,13 @@ func (uc WithdrawWalletUseCase) Execute(
 	if errors.Is(err, transaction.ErrInsufficientBalance) {
 		return domain.Transaction{}, ErrInsufficientFunds
 	}
+	if err != nil {
+		return domain.Transaction{}, err
+	}
 
-	return postedTransaction, err
+	if uc.projector != nil {
+		_, _ = uc.projector.ProjectBalance(ctx, command.WalletID)
+	}
+
+	return postedTransaction, nil
 }

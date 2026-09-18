@@ -330,3 +330,48 @@ func (f *fakeWithdrawTransactionPoster) Execute(
 
 	return domain.Transaction{}, nil
 }
+
+type fakeWalletProjector struct {
+	walletID domain.WalletID
+	calls    int
+	err      error
+}
+
+func (f *fakeWalletProjector) ProjectBalance(
+	_ context.Context,
+	walletID domain.WalletID,
+) (WalletBalance, error) {
+	f.calls++
+	f.walletID = walletID
+	return WalletBalance{}, f.err
+}
+
+func TestWithdrawWalletUseCaseInvokesProjectorOnSuccess(t *testing.T) {
+	w := newTestWallet(t, "wallet-001", "owner-001", "wallet-account-001")
+	wallets := &fakeWalletReader{wallet: w}
+	balances := &fakeWalletBalanceReader{
+		snapshot: LedgerBalanceSnapshot{
+			TotalDebits:  0,
+			TotalCredits: 10000,
+		},
+	}
+	poster := &fakeWithdrawTransactionPoster{}
+	projector := &fakeWalletProjector{}
+
+	useCase := NewWithdrawWalletUseCaseWithProjector(wallets, balances, poster, projector)
+	command := newWithdrawCommand(w)
+	command.AmountMinorUnits = 1000
+
+	_, err := useCase.Execute(context.Background(), command)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if projector.calls != 1 {
+		t.Fatalf("projector calls = %d, want 1", projector.calls)
+	}
+
+	if projector.walletID != w.ID() {
+		t.Fatalf("projector walletID = %q, want %q", projector.walletID, w.ID())
+	}
+}
