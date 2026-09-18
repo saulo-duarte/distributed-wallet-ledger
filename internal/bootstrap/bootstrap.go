@@ -9,10 +9,13 @@ import (
 	"financial-ledger/internal/ledger/adapters/dynamo"
 	"financial-ledger/internal/ledger/adapters/postgres"
 	db "financial-ledger/internal/ledger/adapters/postgres/generated"
+	"financial-ledger/internal/ledger/adapters/sns"
+	"financial-ledger/internal/ledger/adapters/sqs"
 	"financial-ledger/internal/ledger/application/account"
 	"financial-ledger/internal/ledger/application/outbox"
 	"financial-ledger/internal/ledger/application/transaction"
 	"financial-ledger/internal/ledger/application/wallet"
+	"financial-ledger/internal/platform/awsx"
 	"financial-ledger/internal/platform/config"
 	"financial-ledger/internal/platform/dynamodb"
 )
@@ -71,19 +74,47 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 		_ = platformdynamo.EnsureTable(ctx, dynamoClient, cfg.DynamoDBTable)
 		projectionRepo := dynamo.NewWalletBalanceProjectionRepository(dynamoClient, cfg.DynamoDBTable)
 		projector := wallet.NewWalletBalanceProjector(walletRepository, walletRepository, projectionRepo)
-		publisher := wallet.NewWalletBalanceEventPublisher(projector)
-		outboxRepo := postgres.NewOutboxRepository(queries)
-		relay := outbox.NewRelay(
-			outboxRepo,
-			publisher,
-			outbox.RelayConfig{},
-			logger,
-		)
-		go func() {
-			if err := relay.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				logger.Error("outbox_relay_stopped", slog.Any("error", err))
+
+		awsCfg, awsErr := awsx.LoadAWSConfig(ctx, awsx.Config{
+			Endpoint: cfg.AWSEndpoint,
+			Region:   cfg.AWSRegion,
+		})
+		if awsErr == nil {
+			snsClient := awsx.NewSNSClient(awsCfg, cfg.AWSEndpoint)
+			sqsClient := awsx.NewSQSClient(awsCfg, cfg.AWSEndpoint)
+
+			snsPublisher, pubErr := sns.NewEventPublisher(snsClient, cfg.SNSTopicARN)
+			if pubErr == nil {
+				outboxRepo := postgres.NewOutboxRepository(queries)
+				relay := outbox.NewRelay(
+					outboxRepo,
+					snsPublisher,
+					outbox.RelayConfig{},
+					logger,
+				)
+				go func() {
+					if err := relay.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+						logger.Error("outbox_relay_stopped", slog.Any("error", err))
+					}
+				}()
 			}
-		}()
+
+			consumer, consumerErr := sqs.NewProjectionConsumer(
+				sqsClient,
+				projector,
+				sqs.ProjectionConsumerConfig{
+					QueueURL: cfg.SQSWalletBalanceQueueURL,
+				},
+				logger,
+			)
+			if consumerErr == nil {
+				go func() {
+					if err := consumer.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+						logger.Error("sqs_projection_consumer_stopped", slog.Any("error", err))
+					}
+				}()
+			}
+		}
 
 		walletBalanceUseCase = wallet.NewGetWalletBalanceUseCaseWithProjection(
 			walletRepository,
