@@ -20,7 +20,7 @@ services:
     image: ministackorg/ministack:latest
     restart: unless-stopped
     environment:
-      - SERVICES=dynamodb
+      - SERVICES=dynamodb,sns,sqs
     ports:
       - "${DYNAMODB_PORT:-4566}:4566"
     volumes:
