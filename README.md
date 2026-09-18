@@ -25,49 +25,71 @@ The initial domain is a financial ledger composed of accounts, business transact
 
 Money is represented as integer minor units (for example, BRL cents), never as `float64`.
 
-## Current Architecture
+## Architectural Patterns & Highlights
 
-The current architecture is intentionally small:
+- **Hexagonal Architecture (Ports and Adapters):** Strict domain isolation where business rules, accounts, and financial invariants are completely agnostic of database, transport, or cloud providers.
+- **CQRS (Command Query Responsibility Segregation):** Write model persists durable double-entry entries in PostgreSQL with ACID guarantees, while high-throughput balance queries read from a dedicated DynamoDB projection.
+- **Transactional Outbox Pattern:** Atomic, zero-dual-write event publishing within PostgreSQL transactions (`FOR UPDATE SKIP LOCKED`) combined with exponential backoff and relay dispatching.
+- **Event-Driven Architecture with SNS + SQS Fanout:** Outbox events publish to an AWS SNS Topic (`ledger-events`), which broadcasts in parallel to dedicated AWS SQS queues with Dead Letter Queues (DLQ) for asynchronous, decoupled consumers.
+- **Resilience & Fallback Projections:** Real-time balance queries read from the DynamoDB projection with transparent in-flight fallback to PostgreSQL if the read model is temporarily unavailable.
+- **Infrastructure as Code:** Complete local AWS topology (DynamoDB, SNS, SQS, DLQ, Subscriptions) managed with Terraform and Docker Compose.
+
+## Architecture
 
 ```mermaid
-flowchart LR
-    Client --> HTTP[HTTP API]
-    HTTP --> Application[Application layer]
-    Application --> Domain[Ledger domain]
-    Application --> Port[Repository port]
-    Port --> PostgreSQL[PostgreSQL adapter]
-    PostgreSQL --> DB[(PostgreSQL)]
+flowchart TD
+    subgraph WritePath["Write Path (Command)"]
+        Client[HTTP Client] --> API[HTTP API Handler]
+        API --> Core[Application Service / Domain]
+        Core --> PG[(PostgreSQL)]
+        PG -.-> OutboxTable[outbox_events]
+    end
+
+    subgraph RelayPath["Transactional Outbox & Fanout"]
+        OutboxRelay[Outbox Relay Worker] -->|FOR UPDATE SKIP LOCKED| OutboxTable
+        OutboxRelay -->|Publish| SNSTopic[AWS SNS Topic: ledger-events]
+        SNSTopic -->|Fanout| SQSQueue[AWS SQS: wallet-projections-queue]
+        SNSTopic -->|Fanout| SQSQueueAudit[AWS SQS: audit-events-queue]
+        SQSQueue -.-> DLQ[AWS SQS: projections-dlq]
+    end
+
+    subgraph ReadPath["Read Path & Consumer (Query)"]
+        SQSConsumer[SQS Projection Worker] -->|Long Polling| SQSQueue
+        SQSConsumer -->|Upsert Balance| DynamoDB[(AWS DynamoDB Projections)]
+        API -->|Query Balance| DynamoDB
+        DynamoDB -.->|Fallback on Outage| PG
+    end
 ```
-
-PostgreSQL remains the source of truth for the Ledger and Wallet. There is no distributed messaging, read-model database, or microservice split yet.
-
-The current composition root loads local configuration, opens the PostgreSQL pool, creates the SQLC queries, and wires the account and transaction use cases into the HTTP API. The API uses `net/http` handlers, `chi` routing, and shared response/error helpers.
 
 ## Technology Stack
 
-- Go 1.25+
-- PostgreSQL 16 via Docker Compose
-- SQLC for typed SQL access
-- `golang-migrate` CLI for migrations
-- `net/http` handlers with `chi` routing
-- Makefile for repeatable local commands
+- **Go 1.25+** (Standard library, `chi` router, AWS SDK v2, `pgx/v5`)
+- **PostgreSQL 16** (ACID double-entry ledger & transactional outbox)
+- **SQLC** (Type-safe SQL queries)
+- **AWS DynamoDB** (CQRS read model projections)
+- **AWS SNS + SQS** (Pub/Sub Fanout messaging with DLQ)
+- **Terraform** (Infrastructure as Code for local and cloud environments)
+- **Ministack / Docker Compose** (Deterministic local AWS emulation)
+- **golang-migrate** (Database versioning and schema migrations)
 
-## Current Phase
+## Current Status
 
-**Phase 2 — Wallet**
-
-The Ledger Core vertical slice is implemented: accounts, balanced transactions, journal entries, postings, transaction lookup, account entry listing, reversal, idempotency, PostgreSQL persistence, and integration tests.
+- **Phase 1 — Ledger Core:** ✅ Complete (Double-entry accounting, ACID postings, immutability, idempotency)
+- **Phase 2 — Wallet:** ✅ Complete (Deposits, withdrawals, transfers, authorizations, and holds)
+- **Phase 3 — CQRS & Read Model:** ✅ Complete (DynamoDB projections with PostgreSQL live fallback)
+- **Phase 4 — Event-Driven Architecture:** ✅ Complete (Transactional Outbox, SNS/SQS Fanout, SQS consumers, DLQ)
+- **Phase 5 — Resilience:** 🔄 Active (Optimistic concurrency/out-of-order protection, full jitter, chaos/failure tests)
 
 ## Roadmap
 
-1. Ledger Core
-2. Wallet
-3. CQRS
-4. Event Driven
-5. Resilience
-6. Distributed Workflows
-7. Platform
-8. Reliability
+1. Ledger Core (Completed)
+2. Wallet (Completed)
+3. CQRS Read Model (Completed)
+4. Event Driven & Outbox (Completed)
+5. Resilience (Active)
+6. Distributed Workflows (Sagas)
+7. Platform Engineering (Kubernetes & Helm)
+8. Reliability & Observability (OpenTelemetry & Chaos)
 9. Future: Investments / Brokerage
 
 See the [detailed roadmap](docs/01-product/roadmap.md).
