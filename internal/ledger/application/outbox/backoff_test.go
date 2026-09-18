@@ -1,4 +1,4 @@
-﻿package outbox
+package outbox
 
 import (
 	"testing"
@@ -17,47 +17,47 @@ func TestExponentialBackoff_NextDelay(t *testing.T) {
 	tests := []struct {
 		name       string
 		retryCount int
-		expected   time.Duration
+		maxCeiling time.Duration
 	}{
 		{
 			name:       "retry count 0 has no delay",
 			retryCount: 0,
-			expected:   0,
+			maxCeiling: 0,
 		},
 		{
-			name:       "retry count 1 has initial delay",
+			name:       "retry count 1 has max initial delay",
 			retryCount: 1,
-			expected:   500 * time.Millisecond,
+			maxCeiling: 500 * time.Millisecond,
 		},
 		{
-			name:       "retry count 2 doubles delay",
+			name:       "retry count 2 max delay is 1s",
 			retryCount: 2,
-			expected:   1 * time.Second,
+			maxCeiling: 1 * time.Second,
 		},
 		{
-			name:       "retry count 3 quadruples delay",
+			name:       "retry count 3 max delay is 2s",
 			retryCount: 3,
-			expected:   2 * time.Second,
+			maxCeiling: 2 * time.Second,
 		},
 		{
-			name:       "retry count 4 delay is 4s",
+			name:       "retry count 4 max delay is 4s",
 			retryCount: 4,
-			expected:   4 * time.Second,
+			maxCeiling: 4 * time.Second,
 		},
 		{
-			name:       "retry count 5 delay is 8s",
+			name:       "retry count 5 max delay is 8s",
 			retryCount: 5,
-			expected:   8 * time.Second,
+			maxCeiling: 8 * time.Second,
 		},
 		{
 			name:       "retry count 6 caps at max delay",
 			retryCount: 6,
-			expected:   10 * time.Second,
+			maxCeiling: 10 * time.Second,
 		},
 		{
 			name:       "large retry count caps at max delay",
 			retryCount: 50,
-			expected:   10 * time.Second,
+			maxCeiling: 10 * time.Second,
 		},
 	}
 
@@ -66,8 +66,11 @@ func TestExponentialBackoff_NextDelay(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := backoff.NextDelay(tt.retryCount)
-			if got != tt.expected {
-				t.Errorf("NextDelay(%d) = %v, want %v", tt.retryCount, got, tt.expected)
+			if tt.retryCount == 0 && got != 0 {
+				t.Errorf("NextDelay(0) = %v, want 0", got)
+			}
+			if got > tt.maxCeiling || got < 0 {
+				t.Errorf("NextDelay(%d) = %v, out of range [0, %v]", tt.retryCount, got, tt.maxCeiling)
 			}
 		})
 	}

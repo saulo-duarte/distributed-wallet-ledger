@@ -2,6 +2,7 @@ package dynamo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -67,10 +68,18 @@ func (r *WalletBalanceProjectionRepository) SaveWalletBalance(
 	}
 
 	_, err = r.client.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(r.tableName),
-		Item:      av,
+		TableName:           aws.String(r.tableName),
+		Item:                av,
+		ConditionExpression: aws.String("attribute_not_exists(pk) OR updated_at <= :new_updated_at"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":new_updated_at": &types.AttributeValueMemberS{Value: now},
+		},
 	})
 	if err != nil {
+		var condErr *types.ConditionalCheckFailedException
+		if errors.As(err, &condErr) {
+			return nil
+		}
 		return fmt.Errorf("put wallet balance item in dynamodb: %w", err)
 	}
 

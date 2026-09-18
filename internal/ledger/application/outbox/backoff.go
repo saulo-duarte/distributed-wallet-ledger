@@ -1,7 +1,9 @@
-﻿package outbox
+package outbox
 
 import (
+	"crypto/rand"
 	"math"
+	"math/big"
 	"time"
 )
 
@@ -45,8 +47,18 @@ func (b ExponentialBackoff) NextDelay(retryCount int) time.Duration {
 	delay := time.Duration(float64(b.initialInterval) * factor)
 
 	if delay > b.maxInterval || delay <= 0 {
-		return b.maxInterval
+		delay = b.maxInterval
 	}
 
-	return delay
+	maxNanos := delay.Nanoseconds()
+	if maxNanos <= 0 {
+		return delay
+	}
+
+	randomNanos, err := rand.Int(rand.Reader, big.NewInt(maxNanos))
+	if err != nil {
+		return delay
+	}
+
+	return time.Duration(randomNanos.Int64())
 }

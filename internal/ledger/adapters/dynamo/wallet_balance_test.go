@@ -9,6 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
 )
 
@@ -69,5 +73,59 @@ func TestWalletBalanceProjectionRepository_Integration(t *testing.T) {
 	}
 	if actualBalance.AvailableBalanceMinorUnits != expectedBalance.AvailableBalanceMinorUnits {
 		t.Fatalf("expected available balance %d, got %d", expectedBalance.AvailableBalanceMinorUnits, actualBalance.AvailableBalanceMinorUnits)
+	}
+
+	newerBalance := wallet.WalletBalance{
+		WalletID:                   walletID,
+		Currency:                   currency,
+		LedgerBalanceMinorUnits:    60000,
+		AvailableBalanceMinorUnits: 55000,
+	}
+	err = repo.SaveWalletBalance(ctx, newerBalance)
+	if err != nil {
+		t.Fatalf("failed to save newer balance: %v", err)
+	}
+
+	olderBalance := wallet.WalletBalance{
+		WalletID:                   walletID,
+		Currency:                   currency,
+		LedgerBalanceMinorUnits:    10000,
+		AvailableBalanceMinorUnits: 10000,
+	}
+	nowPast := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339Nano)
+	pk := "WALLET#" + walletID.String()
+	sk := "BALANCE"
+	av, err := attributevalue.MarshalMap(walletBalanceItem{
+		PK:                         pk,
+		SK:                         sk,
+		CreatedAt:                  nowPast,
+		WalletID:                   olderBalance.WalletID.String(),
+		Currency:                   olderBalance.Currency.String(),
+		LedgerBalanceMinorUnits:    olderBalance.LedgerBalanceMinorUnits,
+		AvailableBalanceMinorUnits: olderBalance.AvailableBalanceMinorUnits,
+		UpdatedAt:                  nowPast,
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal older balance: %v", err)
+	}
+
+	_, err = client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName:           &tableName,
+		Item:                av,
+		ConditionExpression: aws.String("attribute_not_exists(pk) OR updated_at <= :new_updated_at"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":new_updated_at": &types.AttributeValueMemberS{Value: nowPast},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected conditional check failed error for out of order update, got nil")
+	}
+
+	currentBalance, err := repo.GetWalletBalance(ctx, walletID)
+	if err != nil {
+		t.Fatalf("failed to get current balance: %v", err)
+	}
+	if currentBalance.LedgerBalanceMinorUnits != newerBalance.LedgerBalanceMinorUnits {
+		t.Fatalf("expected ledger balance %d, got %d", newerBalance.LedgerBalanceMinorUnits, currentBalance.LedgerBalanceMinorUnits)
 	}
 }
