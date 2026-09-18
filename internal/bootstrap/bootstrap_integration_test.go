@@ -19,7 +19,7 @@ func TestDependenciesCheckReadiness(t *testing.T) {
 
 	dependencies, err := New(context.Background(), config.Config{
 		DatabaseURL: databaseURL,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("initialize dependencies: %v", err)
 	}

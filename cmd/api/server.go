@@ -21,7 +21,8 @@ func run(ctx context.Context) error {
 	}
 
 	logger, err := observability.NewLogger(observability.LoggingConfig{
-		Level: cfg.LogLevel,
+		Level:  cfg.LogLevel,
+		Format: cfg.LogFormat,
 	})
 	if err != nil {
 		return fmt.Errorf("initialize logger: %w", err)
@@ -29,7 +30,7 @@ func run(ctx context.Context) error {
 
 	logger.Info("application_starting", slog.String("address", cfg.APIAddress))
 
-	dependencies, err := bootstrap.New(ctx, cfg)
+	dependencies, err := bootstrap.New(ctx, cfg, logger)
 	if err != nil {
 		logger.Error(
 			"application_dependencies_initialization_failed",
