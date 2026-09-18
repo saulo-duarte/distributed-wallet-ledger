@@ -132,3 +132,21 @@ func (id HoldID) String() string {
 func (id HoldID) IsZero() bool {
 	return id == ""
 }
+
+type EventID string
+
+func NewEventID(id string) (EventID, error) {
+	cleanID := strings.TrimSpace(id)
+	if cleanID == "" {
+		return "", ErrInvalidID
+	}
+	return EventID(cleanID), nil
+}
+
+func (id EventID) String() string {
+	return string(id)
+}
+
+func (id EventID) IsZero() bool {
+	return id == ""
+}

@@ -47,6 +47,24 @@ func TestIDConstructors(t *testing.T) {
 			input: " posting-001 ",
 			want:  "posting-001",
 		},
+		{
+			name: "creates a hold ID",
+			newID: func(value string) (string, error) {
+				id, err := NewHoldID(value)
+				return id.String(), err
+			},
+			input: " hold-001 ",
+			want:  "hold-001",
+		},
+		{
+			name: "creates an event ID",
+			newID: func(value string) (string, error) {
+				id, err := NewEventID(value)
+				return id.String(), err
+			},
+			input: " event-001 ",
+			want:  "event-001",
+		},
 	}
 
 	for _, tt := range tests {
@@ -100,6 +118,20 @@ func TestIDConstructorsRejectEmptyValues(t *testing.T) {
 				return id.String(), err
 			},
 		},
+		{
+			name: "hold ID",
+			newID: func(value string) (string, error) {
+				id, err := NewHoldID(value)
+				return id.String(), err
+			},
+		},
+		{
+			name: "event ID",
+			newID: func(value string) (string, error) {
+				id, err := NewEventID(value)
+				return id.String(), err
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -130,6 +162,12 @@ func TestIDZeroValues(t *testing.T) {
 	if !PostingID("").IsZero() {
 		t.Error("empty PostingID should be zero")
 	}
+	if !HoldID("").IsZero() {
+		t.Error("empty HoldID should be zero")
+	}
+	if !EventID("").IsZero() {
+		t.Error("empty EventID should be zero")
+	}
 
 	if AccountID("account-001").IsZero() {
 		t.Error("non-empty AccountID should not be zero")
@@ -142,5 +180,11 @@ func TestIDZeroValues(t *testing.T) {
 	}
 	if PostingID("posting-001").IsZero() {
 		t.Error("non-empty PostingID should not be zero")
+	}
+	if HoldID("hold-001").IsZero() {
+		t.Error("non-empty HoldID should not be zero")
+	}
+	if EventID("event-001").IsZero() {
+		t.Error("non-empty EventID should not be zero")
 	}
 }

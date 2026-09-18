@@ -50,4 +50,12 @@ var (
 	ErrHoldNotExpired        = errors.New("hold has not expired")
 	ErrInvalidHoldTimestamp  = errors.New("invalid hold timestamp")
 	ErrInvalidHoldExpiration = errors.New("hold expiration must be after creation")
+
+	// Outbox errors
+	ErrInvalidEventStatus    = errors.New("invalid event status")
+	ErrEmptyAggregateType    = errors.New("aggregate type cannot be empty")
+	ErrEmptyAggregateID      = errors.New("aggregate id cannot be empty")
+	ErrEmptyEventType        = errors.New("event type cannot be empty")
+	ErrEmptyEventPayload     = errors.New("event payload cannot be empty")
+	ErrEventAlreadyProcessed = errors.New("event is already processed")
 )
