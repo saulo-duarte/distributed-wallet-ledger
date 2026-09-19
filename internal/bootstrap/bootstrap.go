@@ -7,12 +7,14 @@ import (
 	"log/slog"
 
 	"financial-ledger/internal/ledger/adapters/dynamo"
+	"financial-ledger/internal/ledger/adapters/gateway"
 	"financial-ledger/internal/ledger/adapters/postgres"
 	db "financial-ledger/internal/ledger/adapters/postgres/generated"
 	"financial-ledger/internal/ledger/adapters/sns"
 	"financial-ledger/internal/ledger/adapters/sqs"
 	"financial-ledger/internal/ledger/application/account"
 	"financial-ledger/internal/ledger/application/outbox"
+	"financial-ledger/internal/ledger/application/saga"
 	"financial-ledger/internal/ledger/application/transaction"
 	"financial-ledger/internal/ledger/application/wallet"
 	"financial-ledger/internal/platform/awsx"
@@ -33,6 +35,7 @@ type Dependencies struct {
 	ReleaseHold        wallet.ReleaseHoldUseCase
 	ExpireHold         wallet.ExpireHoldUseCase
 	CaptureHold        wallet.CaptureHoldUseCase
+	PaymentSaga        saga.PaymentSagaOrchestrator
 	PostTransaction    transaction.PostTransactionUseCase
 	GetTransaction     transaction.GetTransactionUseCase
 	ReverseTransaction transaction.ReverseTransactionUseCase
@@ -139,6 +142,18 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 		)
 	}
 
+	createHoldUseCase := wallet.NewCreateHoldUseCase(
+		walletRepository,
+		holdRepository,
+	)
+	releaseHoldUseCase := wallet.NewReleaseHoldUseCase(holdRepository)
+	expireHoldUseCase := wallet.NewExpireHoldUseCase(holdRepository)
+	captureHoldUseCase := wallet.NewCaptureHoldUseCase(
+		walletRepository,
+		holdRepository,
+		holdRepository,
+	)
+
 	return &Dependencies{
 		CreateAccount:      account.NewCreateAccountUseCase(accountRepository),
 		CreateWallet:       wallet.NewCreateWalletUseCase(walletRepository),
@@ -155,16 +170,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 			walletRepository,
 			postTransaction,
 		),
-		CreateHold: wallet.NewCreateHoldUseCase(
-			walletRepository,
-			holdRepository,
-		),
-		ReleaseHold: wallet.NewReleaseHoldUseCase(holdRepository),
-		ExpireHold:  wallet.NewExpireHoldUseCase(holdRepository),
-		CaptureHold: wallet.NewCaptureHoldUseCase(
-			walletRepository,
-			holdRepository,
-			holdRepository,
+		CreateHold: createHoldUseCase,
+		ReleaseHold: releaseHoldUseCase,
+		ExpireHold:  expireHoldUseCase,
+		CaptureHold: captureHoldUseCase,
+		PaymentSaga: saga.NewPaymentSagaOrchestrator(
+			createHoldUseCase,
+			gateway.NewMockAntiFraudService(),
+			captureHoldUseCase,
+			releaseHoldUseCase,
+			gateway.NewMockPaymentGateway(),
 		),
 		PostTransaction:    postTransaction,
 		GetTransaction:     transaction.NewGetTransactionUseCase(transactionRepository),

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"financial-ledger/internal/ledger/application/account"
+	"financial-ledger/internal/ledger/application/saga"
 	"financial-ledger/internal/ledger/application/transaction"
 	"financial-ledger/internal/ledger/application/wallet"
 	"financial-ledger/internal/ledger/domain"
@@ -61,6 +62,12 @@ func mapApplicationError(err error) errorMapping {
 		return errorMapping{http.StatusNotFound, "wallet_not_found"}
 	case errors.Is(err, wallet.ErrHoldNotFound):
 		return errorMapping{http.StatusNotFound, "hold_not_found"}
+	case errors.Is(err, saga.ErrAntiFraudRejected):
+		return errorMapping{http.StatusUnprocessableEntity, "anti_fraud_rejected"}
+	case errors.Is(err, saga.ErrExternalPaymentFailed):
+		return errorMapping{http.StatusUnprocessableEntity, "external_payment_failed"}
+	case errors.Is(err, saga.ErrSagaCompensationFailed):
+		return errorMapping{http.StatusInternalServerError, "saga_compensation_failed"}
 	case errors.Is(err, wallet.ErrHoldIdempotencyConflict):
 		return errorMapping{http.StatusConflict, "hold_idempotency_conflict"}
 	case errors.Is(err, wallet.ErrCaptureSameAccount):

@@ -28,25 +28,36 @@ Money is represented as integer minor units (for example, BRL cents), never as `
 ## Architectural Patterns & Highlights
 
 - **Hexagonal Architecture (Ports and Adapters):** Strict domain isolation where business rules, accounts, and financial invariants are completely agnostic of database, transport, or cloud providers.
+- **Distributed Workflows & Saga Pattern:** Orchestrated multi-step payment execution (`Authorize Hold` -> `Anti-Fraud Check` -> `External Payment Gateway` -> `Capture Hold` / `Compensate Release`) guaranteeing eventual consistency without distributed locks.
 - **CQRS (Command Query Responsibility Segregation):** Write model persists durable double-entry entries in PostgreSQL with ACID guarantees, while high-throughput balance queries read from a dedicated DynamoDB projection.
-- **Transactional Outbox Pattern:** Atomic, zero-dual-write event publishing within PostgreSQL transactions (`FOR UPDATE SKIP LOCKED`) combined with exponential backoff and relay dispatching.
+- **Transactional Outbox Pattern:** Atomic, zero-dual-write event publishing within PostgreSQL transactions (`FOR UPDATE SKIP LOCKED`) combined with full jitter exponential backoff and relay dispatching.
 - **Event-Driven Architecture with SNS + SQS Fanout:** Outbox events publish to an AWS SNS Topic (`ledger-events`), which broadcasts in parallel to dedicated AWS SQS queues with Dead Letter Queues (DLQ) for asynchronous, decoupled consumers.
-- **Resilience & Fallback Projections:** Real-time balance queries read from the DynamoDB projection with transparent in-flight fallback to PostgreSQL if the read model is temporarily unavailable.
+- **Resilience & Fallback Projections:** Real-time balance queries read from the DynamoDB projection with optimistic concurrency protection (RFC3339Nano timestamps) and transparent in-flight fallback to PostgreSQL if the read model is temporarily unavailable.
 - **Infrastructure as Code:** Complete local AWS topology (DynamoDB, SNS, SQS, DLQ, Subscriptions) managed with Terraform and Docker Compose.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph WritePath["Write Path (Command)"]
-        Client[HTTP Client] --> API[HTTP API Handler]
-        API --> Core[Application Service / Domain]
-        Core --> PG[(PostgreSQL)]
-        PG -.-> OutboxTable[outbox_events]
+    subgraph SagaFlow["Saga Orchestrator (Payment Flow)"]
+        Client[HTTP Client] -->|POST /payments/checkout| SagaAPI[Payment Saga Orchestrator]
+        
+        SagaAPI -->|Step 1: Authorize Hold| PG_Hold[(PostgreSQL / wallet_holds)]
+        PG_Hold -.->|HoldCreated Event| OutboxTable[outbox_events]
+        
+        SagaAPI -->|Step 2: Anti-Fraud Evaluation| AntiFraud[Anti-Fraud Service / Mock]
+        AntiFraud -.->|Risk Rejected| CompensateRelease[Compensating Action: Release Hold]
+        
+        SagaAPI -->|Step 3: Process Payment| Gateway[Payment Gateway / Mock]
+        Gateway -.->|Declined / Timeout| CompensateRelease
+        CompensateRelease -.->|HoldReleased Event| OutboxTable
+        
+        SagaAPI -->|Step 4: Capture Hold| PG_Ledger[(PostgreSQL / Double-Entry Ledger)]
+        PG_Ledger -.->|HoldCaptured & TransactionPosted Events| OutboxTable
     end
 
     subgraph RelayPath["Transactional Outbox & Fanout"]
-        OutboxRelay[Outbox Relay Worker] -->|FOR UPDATE SKIP LOCKED| OutboxTable
+        OutboxRelay[Outbox Relay Worker] -->|FOR UPDATE SKIP LOCKED (Full Jitter)| OutboxTable
         OutboxRelay -->|Publish| SNSTopic[AWS SNS Topic: ledger-events]
         SNSTopic -->|Fanout| SQSQueue[AWS SQS: wallet-projections-queue]
         SNSTopic -->|Fanout| SQSQueueAudit[AWS SQS: audit-events-queue]
@@ -55,9 +66,9 @@ flowchart TD
 
     subgraph ReadPath["Read Path & Consumer (Query)"]
         SQSConsumer[SQS Projection Worker] -->|Long Polling| SQSQueue
-        SQSConsumer -->|Upsert Balance| DynamoDB[(AWS DynamoDB Projections)]
-        API -->|Query Balance| DynamoDB
-        DynamoDB -.->|Fallback on Outage| PG
+        SQSConsumer -->|Conditional Put / Anti Out-of-Order| DynamoDB[(AWS DynamoDB Projections)]
+        Client -->|GET /wallets/:id/balance| DynamoDB
+        DynamoDB -.->|Fallback on Outage| PG_Hold
     end
 ```
 
@@ -66,7 +77,7 @@ flowchart TD
 - **Go 1.25+** (Standard library, `chi` router, AWS SDK v2, `pgx/v5`)
 - **PostgreSQL 16** (ACID double-entry ledger & transactional outbox)
 - **SQLC** (Type-safe SQL queries)
-- **AWS DynamoDB** (CQRS read model projections)
+- **AWS DynamoDB** (CQRS read model projections with optimistic concurrency)
 - **AWS SNS + SQS** (Pub/Sub Fanout messaging with DLQ)
 - **Terraform** (Infrastructure as Code for local and cloud environments)
 - **Ministack / Docker Compose** (Deterministic local AWS emulation)
@@ -78,7 +89,8 @@ flowchart TD
 - **Phase 2 — Wallet:** ✅ Complete (Deposits, withdrawals, transfers, authorizations, and holds)
 - **Phase 3 — CQRS & Read Model:** ✅ Complete (DynamoDB projections with PostgreSQL live fallback)
 - **Phase 4 — Event-Driven Architecture:** ✅ Complete (Transactional Outbox, SNS/SQS Fanout, SQS consumers, DLQ)
-- **Phase 5 — Resilience:** 🔄 Active (Optimistic concurrency/out-of-order protection, full jitter, chaos/failure tests)
+- **Phase 5 — Resilience:** ✅ Complete (Optimistic concurrency/out-of-order protection, full jitter backoff, failure tests)
+- **Phase 6 — Distributed Workflows (Sagas):** 🔄 Active (Payment Saga, Anti-Fraud check, Mock Gateway, Hold Captures & Compensations)
 
 ## Roadmap
 

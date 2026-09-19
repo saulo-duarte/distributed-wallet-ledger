@@ -20,6 +20,7 @@ func NewRouter(
 		transactionHandler,
 		accountEntriesHandler,
 		nil,
+		nil,
 		reversalHandlers...,
 	)
 }
@@ -38,6 +39,27 @@ func NewRouterWithWallet(
 		transactionHandler,
 		accountEntriesHandler,
 		walletHandler,
+		nil,
+		reversalHandlers...,
+	)
+}
+
+func NewRouterWithSaga(
+	accountHandler *AccountHandler,
+	readinessChecker func(context.Context) error,
+	transactionHandler *TransactionHandler,
+	accountEntriesHandler *AccountEntriesHandler,
+	walletHandler *WalletHandler,
+	paymentHandler *PaymentHandler,
+	reversalHandlers ...*ReversalHandler,
+) http.Handler {
+	return newRouter(
+		accountHandler,
+		readinessChecker,
+		transactionHandler,
+		accountEntriesHandler,
+		walletHandler,
+		paymentHandler,
 		reversalHandlers...,
 	)
 }
@@ -48,6 +70,7 @@ func newRouter(
 	transactionHandler *TransactionHandler,
 	accountEntriesHandler *AccountEntriesHandler,
 	walletHandler *WalletHandler,
+	paymentHandler *PaymentHandler,
 	reversalHandlers ...*ReversalHandler,
 ) http.Handler {
 	router := chi.NewRouter()
@@ -116,6 +139,10 @@ func newRouter(
 			router.Get("/wallets/{walletID}", walletHandler.Get)
 			router.Get("/owners/{ownerID}/wallets", walletHandler.ListByOwner)
 		}
+	}
+
+	if paymentHandler != nil {
+		router.Post("/payments/checkout", paymentHandler.Checkout)
 	}
 
 	if transactionHandler != nil {

@@ -75,12 +75,17 @@ func run(ctx context.Context) error {
 		dependencies.ReverseTransaction,
 		logger,
 	)
-	router := httpadapter.NewRouterWithWallet(
+	paymentHandler := httpadapter.NewPaymentHandler(
+		dependencies.PaymentSaga,
+		logger,
+	)
+	router := httpadapter.NewRouterWithSaga(
 		accountHandler,
 		dependencies.CheckReadiness,
 		transactionHandler,
 		accountEntriesHandler,
 		walletHandler,
+		paymentHandler,
 		reversalHandler,
 	)
 	handler := observability.HTTPRequestLogger(logger)(router)
