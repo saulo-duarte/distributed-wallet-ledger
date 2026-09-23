@@ -65,6 +65,20 @@ func (uc GetWalletBalanceUseCase) Execute(
 		}
 	}
 
+	return uc.ExecuteFromLedger(ctx, walletID)
+}
+
+// ExecuteFromLedger returns an up-to-date balance calculated from the ledger
+// source of truth. It is appropriate immediately after a write when an
+// eventually consistent projection may still be catching up.
+func (uc GetWalletBalanceUseCase) ExecuteFromLedger(
+	ctx context.Context,
+	walletID domain.WalletID,
+) (WalletBalance, error) {
+	if walletID.IsZero() {
+		return WalletBalance{}, domain.ErrInvalidID
+	}
+
 	if uc.logger != nil {
 		uc.logger.DebugContext(
 			ctx,

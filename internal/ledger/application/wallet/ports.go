@@ -47,6 +47,10 @@ type HoldRepository interface {
 		holdID domain.HoldID,
 		status domain.HoldStatus,
 	) error
+	ListExpiredHolds(
+		ctx context.Context,
+		limit int32,
+	) ([]domain.HoldID, error)
 }
 
 type TransactionPoster interface {

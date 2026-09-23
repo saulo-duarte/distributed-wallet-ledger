@@ -218,3 +218,33 @@ func (q *Queries) UpdateWalletHoldStatus(ctx context.Context, arg UpdateWalletHo
 	}
 	return result.RowsAffected(), nil
 }
+
+const listExpiredWalletHoldIDs = `-- name: ListExpiredWalletHoldIDs :many
+SELECT id
+FROM wallet_holds
+WHERE status = 'authorized'
+  AND expires_at <= NOW()
+ORDER BY expires_at ASC, id ASC
+LIMIT $1
+`
+
+func (q *Queries) ListExpiredWalletHoldIDs(ctx context.Context, limit int32) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listExpiredWalletHoldIDs, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]pgtype.UUID, 0)
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

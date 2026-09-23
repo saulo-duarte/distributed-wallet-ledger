@@ -14,7 +14,7 @@ import (
 func TestOutboxRepository_Integration(t *testing.T) {
 	pool := openIntegrationPool(t)
 	queries := db.New(pool)
-	repository := NewOutboxRepository(queries)
+	repository := NewOutboxRepository(queries, pool)
 	ctx := context.Background()
 
 	eventID, err := domain.NewEventID("a0000000-0000-4000-8000-000000000001")

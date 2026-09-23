@@ -714,11 +714,7 @@ func transactionIDToUUID(id domain.TransactionID) (pgtype.UUID, error) {
 	var uuid pgtype.UUID
 
 	if err := uuid.Scan(id.String()); err != nil {
-		return pgtype.UUID{}, fmt.Errorf(
-			"convert transaction ID %q to PostgreSQL UUID: %w",
-			id.String(),
-			err,
-		)
+		return pgtype.UUID{}, invalidUUIDError("transaction ID", id.String(), err)
 	}
 
 	return uuid, nil
@@ -728,11 +724,7 @@ func journalEntryIDToUUID(id domain.JournalEntryID) (pgtype.UUID, error) {
 	var uuid pgtype.UUID
 
 	if err := uuid.Scan(id.String()); err != nil {
-		return pgtype.UUID{}, fmt.Errorf(
-			"convert journal entry ID %q to PostgreSQL UUID: %w",
-			id.String(),
-			err,
-		)
+		return pgtype.UUID{}, invalidUUIDError("journal entry ID", id.String(), err)
 	}
 
 	return uuid, nil

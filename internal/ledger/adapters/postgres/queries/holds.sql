@@ -82,3 +82,11 @@ SET status = $2,
     updated_at = NOW()
 WHERE id = $1
   AND status = 'authorized';
+
+-- name: ListExpiredWalletHoldIDs :many
+SELECT id
+FROM wallet_holds
+WHERE status = 'authorized'
+  AND expires_at <= NOW()
+ORDER BY expires_at ASC, id ASC
+LIMIT $1;

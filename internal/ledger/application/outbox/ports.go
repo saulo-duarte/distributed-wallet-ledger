@@ -10,6 +10,7 @@ import (
 type OutboxRepository interface {
 	Save(ctx context.Context, event domain.OutboxEvent) error
 	FetchPending(ctx context.Context, maxRetries int, limit int) ([]domain.OutboxEvent, error)
+	ReleaseClaim(ctx context.Context, eventID domain.EventID, updatedAt time.Time) error
 	MarkPublished(ctx context.Context, eventID domain.EventID, processedAt time.Time) error
 	MarkFailed(ctx context.Context, eventID domain.EventID, lastError string, updatedAt time.Time) error
 }

@@ -387,6 +387,13 @@ func (f *fakeHTTPHoldRepository) UpdateStatus(
 	return nil
 }
 
+func (f *fakeHTTPHoldRepository) ListExpiredHolds(
+	_ context.Context,
+	_ int32,
+) ([]domain.HoldID, error) {
+	return nil, nil
+}
+
 func (f *fakeHTTPHoldRepository) Capture(
 	_ context.Context,
 	_ domain.HoldID,

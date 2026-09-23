@@ -204,6 +204,33 @@ func (r *HoldRepository) UpdateStatus(
 	return nil
 }
 
+func (r *HoldRepository) ListExpiredHolds(
+	ctx context.Context,
+	limit int32,
+) ([]domain.HoldID, error) {
+	if r == nil || r.queries == nil {
+		return nil, fmt.Errorf("hold repository is not configured")
+	}
+	if limit <= 0 {
+		return []domain.HoldID{}, nil
+	}
+
+	rows, err := r.queries.ListExpiredWalletHoldIDs(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list expired wallet holds: %w", err)
+	}
+
+	holdIDs := make([]domain.HoldID, 0, len(rows))
+	for _, row := range rows {
+		holdID, err := domain.NewHoldID(row.String())
+		if err != nil {
+			return nil, fmt.Errorf("map expired wallet hold ID: %w", err)
+		}
+		holdIDs = append(holdIDs, holdID)
+	}
+	return holdIDs, nil
+}
+
 func (r *HoldRepository) Capture(
 	ctx context.Context,
 	holdID domain.HoldID,
@@ -365,11 +392,7 @@ func holdIDToUUID(id domain.HoldID) (pgtype.UUID, error) {
 	var uuid pgtype.UUID
 
 	if err := uuid.Scan(id.String()); err != nil {
-		return pgtype.UUID{}, fmt.Errorf(
-			"convert hold ID %q to PostgreSQL UUID: %w",
-			id.String(),
-			err,
-		)
+		return pgtype.UUID{}, invalidUUIDError("hold ID", id.String(), err)
 	}
 
 	return uuid, nil

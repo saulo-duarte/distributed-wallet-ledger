@@ -87,7 +87,7 @@ func (h *PaymentHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 	holdIDStr := req.HoldID
 	if holdIDStr == "" {
-		holdIDStr = uuid.NewString()
+		holdIDStr = deterministicPaymentID(idempotencyKey, "hold")
 	}
 	holdID, err := domain.NewHoldID(holdIDStr)
 	if err != nil {
@@ -109,7 +109,7 @@ func (h *PaymentHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 	txIDStr := req.TransactionID
 	if txIDStr == "" {
-		txIDStr = uuid.NewString()
+		txIDStr = deterministicPaymentID(idempotencyKey, "transaction")
 	}
 	transactionID, err := domain.NewTransactionID(txIDStr)
 	if err != nil {
@@ -119,7 +119,7 @@ func (h *PaymentHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 	journalIDStr := req.JournalEntryID
 	if journalIDStr == "" {
-		journalIDStr = uuid.NewString()
+		journalIDStr = deterministicPaymentID(idempotencyKey, "journal")
 	}
 	journalEntryID, err := domain.NewJournalEntryID(journalIDStr)
 	if err != nil {
@@ -129,7 +129,7 @@ func (h *PaymentHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 	wPostingIDStr := req.WalletPostingID
 	if wPostingIDStr == "" {
-		wPostingIDStr = uuid.NewString()
+		wPostingIDStr = deterministicPaymentID(idempotencyKey, "wallet-posting")
 	}
 	walletPostingID, err := domain.NewPostingID(wPostingIDStr)
 	if err != nil {
@@ -139,7 +139,7 @@ func (h *PaymentHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 	sPostingIDStr := req.SettlementPostingID
 	if sPostingIDStr == "" {
-		sPostingIDStr = uuid.NewString()
+		sPostingIDStr = deterministicPaymentID(idempotencyKey, "settlement-posting")
 	}
 	settlementPostingID, err := domain.NewPostingID(sPostingIDStr)
 	if err != nil {
@@ -206,4 +206,14 @@ func (h *PaymentHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// deterministicPaymentID keeps server-generated aggregate IDs stable across
+// retries that reuse the same idempotency key. This is important because a
+// checkout spans a hold, an external payment and a ledger capture.
+func deterministicPaymentID(idempotencyKey, kind string) string {
+	return uuid.NewSHA1(
+		uuid.NameSpaceURL,
+		[]byte("goledge/payment/"+kind+":"+idempotencyKey),
+	).String()
 }

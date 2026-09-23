@@ -13,6 +13,7 @@ type mockOutboxRepository struct {
 	events          []domain.OutboxEvent
 	publishedEvents []domain.EventID
 	failedEvents    map[domain.EventID]string
+	releasedEvents  []domain.EventID
 	fetchErr        error
 }
 
@@ -30,6 +31,11 @@ func (m *mockOutboxRepository) FetchPending(ctx context.Context, maxRetries int,
 
 func (m *mockOutboxRepository) MarkPublished(ctx context.Context, eventID domain.EventID, processedAt time.Time) error {
 	m.publishedEvents = append(m.publishedEvents, eventID)
+	return nil
+}
+
+func (m *mockOutboxRepository) ReleaseClaim(ctx context.Context, eventID domain.EventID, updatedAt time.Time) error {
+	m.releasedEvents = append(m.releasedEvents, eventID)
 	return nil
 }
 
@@ -153,6 +159,9 @@ func TestRelay_ProcessBatch(t *testing.T) {
 		}
 		if len(pub.published) != 0 {
 			t.Errorf("published count = %d, want 0", len(pub.published))
+		}
+		if len(repo.releasedEvents) != 1 || repo.releasedEvents[0] != eventID {
+			t.Errorf("expected event %v claim to be released", eventID)
 		}
 	})
 

@@ -165,11 +165,7 @@ func walletIDToUUID(id domain.WalletID) (pgtype.UUID, error) {
 	var uuid pgtype.UUID
 
 	if err := uuid.Scan(id.String()); err != nil {
-		return pgtype.UUID{}, fmt.Errorf(
-			"convert wallet ID %q to PostgreSQL UUID: %w",
-			id.String(),
-			err,
-		)
+		return pgtype.UUID{}, invalidUUIDError("wallet ID", id.String(), err)
 	}
 
 	return uuid, nil

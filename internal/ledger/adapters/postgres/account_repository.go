@@ -183,11 +183,7 @@ func mapAccountEntry(row accountEntryRow) (account.AccountEntry, error) {
 func postingIDToUUID(id domain.PostingID) (pgtype.UUID, error) {
 	var uuid pgtype.UUID
 	if err := uuid.Scan(id.String()); err != nil {
-		return pgtype.UUID{}, fmt.Errorf(
-			"convert posting ID %q to PostgreSQL UUID: %w",
-			id.String(),
-			err,
-		)
+		return pgtype.UUID{}, invalidUUIDError("posting ID", id.String(), err)
 	}
 	return uuid, nil
 }
@@ -217,11 +213,7 @@ func accountIDToUUID(id domain.AccountID) (pgtype.UUID, error) {
 	var uuid pgtype.UUID
 
 	if err := uuid.Scan(id.String()); err != nil {
-		return pgtype.UUID{}, fmt.Errorf(
-			"convert account ID %q to PostgreSQL UUID: %w",
-			id.String(),
-			err,
-		)
+		return pgtype.UUID{}, invalidUUIDError("account ID", id.String(), err)
 	}
 
 	return uuid, nil

@@ -295,7 +295,12 @@ func (h *WalletHandler) GetBalance(
 		return
 	}
 
-	balance, err := h.getBalance.Execute(r.Context(), walletID)
+	var balance wallet.WalletBalance
+	if r.URL.Query().Get("consistency") == "strong" {
+		balance, err = h.getBalance.ExecuteFromLedger(r.Context(), walletID)
+	} else {
+		balance, err = h.getBalance.Execute(r.Context(), walletID)
+	}
 	if err != nil {
 		if !isClientError(err) && h.logger != nil {
 			h.logger.ErrorContext(
