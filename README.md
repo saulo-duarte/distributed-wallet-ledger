@@ -1,8 +1,16 @@
-# Financial Ledger
+# Distributed Wallet Ledger
+
+<p align="center">
+  <img src="assets/goledge-hero.png" alt="GoLedger architecture illustration with a Go gopher, ledger entries and event fanout" width="100%">
+</p>
+
+<p align="center">
+  Event-driven financial ledger and wallet platform built with Go, PostgreSQL, DynamoDB, SNS/SQS and Kubernetes.
+</p>
 
 ## Overview
 
-Financial Ledger is an educational platform for studying reliable financial systems. It starts with a small, explicit double-entry ledger and evolves only when a concrete problem justifies a new architectural pattern.
+Distributed Wallet Ledger is an educational platform for studying reliable financial systems. It starts with a small, explicit double-entry ledger and evolves only when a concrete problem justifies a new architectural pattern.
 
 The first product built on top of the platform will be a Wallet. The ledger remains the financial source of truth so that future products such as investments, brokerage, payments, or settlement can reuse the same accounting foundation.
 
@@ -38,38 +46,29 @@ Money is represented as integer minor units (for example, BRL cents), never as `
 ## Architecture
 
 ```mermaid
-flowchart TD
-    subgraph SagaFlow["Saga Orchestrator (Payment Flow)"]
-        Client[HTTP Client] -->|POST /payments/checkout| SagaAPI[Payment Saga Orchestrator]
-        
-        SagaAPI -->|Step 1: Authorize Hold| PG_Hold[(PostgreSQL / wallet_holds)]
-        PG_Hold -.->|HoldCreated Event| OutboxTable[outbox_events]
-        
-        SagaAPI -->|Step 2: Anti-Fraud Evaluation| AntiFraud[Anti-Fraud Service / Mock]
-        AntiFraud -.->|Risk Rejected| CompensateRelease[Compensating Action: Release Hold]
-        
-        SagaAPI -->|Step 3: Process Payment| Gateway[Payment Gateway / Mock]
-        Gateway -.->|Declined / Timeout| CompensateRelease
-        CompensateRelease -.->|HoldReleased Event| OutboxTable
-        
-        SagaAPI -->|Step 4: Capture Hold| PG_Ledger[(PostgreSQL / Double-Entry Ledger)]
-        PG_Ledger -.->|HoldCaptured & TransactionPosted Events| OutboxTable
-    end
+flowchart LR
+    client[HTTP client] -->|checkout request| saga[Payment Saga]
 
-    subgraph RelayPath["Transactional Outbox & Fanout"]
-        OutboxRelay[Outbox Relay Worker] -->|FOR UPDATE SKIP LOCKED (Full Jitter)| OutboxTable
-        OutboxRelay -->|Publish| SNSTopic[AWS SNS Topic: ledger-events]
-        SNSTopic -->|Fanout| SQSQueue[AWS SQS: wallet-projections-queue]
-        SNSTopic -->|Fanout| SQSQueueAudit[AWS SQS: audit-events-queue]
-        SQSQueue -.-> DLQ[AWS SQS: projections-dlq]
-    end
+    saga -->|authorize| hold[Wallet hold]
+    saga -->|evaluate| fraud[Anti-fraud service]
+    saga -->|process| gateway[Payment gateway]
+    saga -->|capture| ledger[PostgreSQL double-entry ledger]
 
-    subgraph ReadPath["Read Path & Consumer (Query)"]
-        SQSConsumer[SQS Projection Worker] -->|Long Polling| SQSQueue
-        SQSConsumer -->|Conditional Put / Anti Out-of-Order| DynamoDB[(AWS DynamoDB Projections)]
-        Client -->|GET /wallets/:id/balance| DynamoDB
-        DynamoDB -.->|Fallback on Outage| PG_Hold
-    end
+    fraud -.->|rejected| release[Release hold]
+    gateway -.->|declined or timeout| release
+    release --> outbox[Transactional outbox]
+    hold --> outbox
+    ledger --> outbox
+
+    outbox -->|publish events| sns[SNS ledger-events topic]
+    sns -->|fanout| projectionQueue[SQS projection queue]
+    sns -->|fanout| auditQueue[SQS audit queue]
+    projectionQueue -.->|after retries| dlq[SQS dead-letter queue]
+
+    projectionQueue -->|long polling| consumer[Projection consumer]
+    consumer -->|conditional update| dynamo[DynamoDB balance projection]
+    client -->|read balance| dynamo
+    dynamo -.->|strong-consistency fallback| ledger
 ```
 
 ## Technology Stack
@@ -136,7 +135,7 @@ Useful commands are documented in the [local development guide](docs/README.md).
 ## Repository Structure
 
 ```text
-cmd/                         application entrypoints
+cmd/                         application entrypoints and load generator
 internal/ledger/domain/      pure domain model and invariants
 internal/ledger/application/ use-case orchestration and ports
 internal/ledger/adapters/    external adapters, including PostgreSQL
@@ -145,7 +144,10 @@ internal/bootstrap/          composition root for dependency injection
 migrations/                  versioned database migrations
 scripts/                     local development helpers
 docs/                        durable product, domain, architecture, and ADR docs
-deploy/                      reserved for deployment manifests when needed
+deploy/                      Kubernetes, Helm, and Prometheus manifests
+web/                         architecture and Saga visualization dashboard
+reports/                     load-test reports and reliability evidence
+assets/                      repository presentation assets
 infra/                       reserved for infrastructure experiments when needed
 observability/               reserved for observability configuration when needed
 ```
