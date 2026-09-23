@@ -15,7 +15,7 @@ import (
 )
 
 func run(ctx context.Context) error {
-	cfg, err := config.Load()
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return fmt.Errorf("load application config: %w", err)
 	}
@@ -27,6 +27,21 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("initialize logger: %w", err)
 	}
+
+	tracerShutdown, err := observability.InitTracer(ctx, observability.TracerConfig{
+		ServiceName:  cfg.OTELServiceName,
+		OTLPEndpoint: cfg.OTELEndpoint,
+		Insecure:     true,
+		Disabled:     cfg.OTELDisabled,
+	})
+	if err != nil {
+		return fmt.Errorf("initialize tracer: %w", err)
+	}
+	defer func() {
+		_ = tracerShutdown(context.Background())
+	}()
+
+	metrics := observability.DefaultMetrics()
 
 	logger.Info("application_starting", slog.String("address", cfg.APIAddress))
 
@@ -88,7 +103,11 @@ func run(ctx context.Context) error {
 		paymentHandler,
 		reversalHandler,
 	)
-	handler := observability.HTTPRequestLogger(logger)(router)
+	handler := observability.HTTPTracingMiddleware(
+		metrics.HTTPMetricsMiddleware(
+			observability.HTTPRequestLogger(logger)(router),
+		),
+	)
 
 	server := &http.Server{
 		Addr:              cfg.APIAddress,

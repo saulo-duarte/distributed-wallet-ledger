@@ -1,11 +1,14 @@
 package observability
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 type LoggingConfig struct {
@@ -38,7 +41,23 @@ func NewLogger(cfg LoggingConfig) (*slog.Logger, error) {
 		handler = slog.NewJSONHandler(writer, opts)
 	}
 
-	return slog.New(handler), nil
+	traceHandler := &traceContextHandler{Handler: handler}
+	return slog.New(traceHandler), nil
+}
+
+type traceContextHandler struct {
+	slog.Handler
+}
+
+func (h *traceContextHandler) Handle(ctx context.Context, r slog.Record) error {
+	spanCtx := trace.SpanFromContext(ctx).SpanContext()
+	if spanCtx.IsValid() {
+		r.AddAttrs(
+			slog.String("trace_id", spanCtx.TraceID().String()),
+			slog.String("span_id", spanCtx.SpanID().String()),
+		)
+	}
+	return h.Handler.Handle(ctx, r)
 }
 
 func ParseLevel(value string) (slog.Level, error) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"financial-ledger/internal/platform/observability"
+
 	"github.com/go-chi/chi/v5"
 )
 
@@ -80,6 +82,7 @@ func newRouter(
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key, Authorization, X-Request-ID")
+			w.Header().Set("Access-Control-Expose-Headers", "X-Trace-ID, X-Request-ID")
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -93,6 +96,7 @@ func newRouter(
 	router.Get("/health", healthHandler.Live)
 	router.Get("/health/live", healthHandler.Live)
 	router.Get("/health/ready", healthHandler.Ready)
+	router.Get("/metrics", observability.MetricsHandler().ServeHTTP)
 	router.Post("/accounts", accountHandler.Create)
 	if walletHandler != nil {
 		router.Post("/wallets", walletHandler.Create)

@@ -1,4 +1,4 @@
-﻿package awsx
+package awsx
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
 type Config struct {
@@ -46,6 +47,14 @@ func NewSNSClient(awsCfg aws.Config, endpoint string) *sns.Client {
 
 func NewSQSClient(awsCfg aws.Config, endpoint string) *sqs.Client {
 	return sqs.NewFromConfig(awsCfg, func(o *sqs.Options) {
+		if endpoint != "" {
+			o.BaseEndpoint = aws.String(endpoint)
+		}
+	})
+}
+
+func NewSSMClient(awsCfg aws.Config, endpoint string) *ssm.Client {
+	return ssm.NewFromConfig(awsCfg, func(o *ssm.Options) {
 		if endpoint != "" {
 			o.BaseEndpoint = aws.String(endpoint)
 		}

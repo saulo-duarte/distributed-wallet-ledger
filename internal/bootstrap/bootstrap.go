@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"financial-ledger/internal/ledger/adapters/dynamo"
 	"financial-ledger/internal/ledger/adapters/gateway"
@@ -12,6 +13,7 @@ import (
 	db "financial-ledger/internal/ledger/adapters/postgres/generated"
 	"financial-ledger/internal/ledger/adapters/sns"
 	"financial-ledger/internal/ledger/adapters/sqs"
+	"financial-ledger/internal/ledger/adapters/worker"
 	"financial-ledger/internal/ledger/application/account"
 	"financial-ledger/internal/ledger/application/outbox"
 	"financial-ledger/internal/ledger/application/saga"
@@ -20,6 +22,8 @@ import (
 	"financial-ledger/internal/platform/awsx"
 	"financial-ledger/internal/platform/config"
 	"financial-ledger/internal/platform/dynamodb"
+	"financial-ledger/internal/platform/observability"
+	"financial-ledger/internal/platform/resilience"
 )
 
 type Dependencies struct {
@@ -46,6 +50,10 @@ type Dependencies struct {
 }
 
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependencies, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	connectionConfig := postgres.DefaultConnectionConfig(cfg.DatabaseURL)
 	pool, err := postgres.OpenPool(ctx, connectionConfig)
 	if err != nil {
@@ -64,6 +72,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 	postTransaction := transaction.NewPostTransactionUseCase(
 		transactionRepository,
 	)
+	metrics := observability.DefaultMetrics()
 
 	var walletBalanceUseCase wallet.GetWalletBalanceUseCase
 	var withdrawWalletUseCase wallet.WithdrawWalletUseCase
@@ -74,7 +83,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 		Table:    cfg.DynamoDBTable,
 	})
 	if err == nil {
-		_ = platformdynamo.EnsureTable(ctx, dynamoClient, cfg.DynamoDBTable)
+		if err := platformdynamo.EnsureTable(ctx, dynamoClient, cfg.DynamoDBTable); err != nil {
+			logger.Warn("dynamodb_projection_unavailable", slog.Any("error", err))
+		}
 		projectionRepo := dynamo.NewWalletBalanceProjectionRepository(dynamoClient, cfg.DynamoDBTable)
 		projector := wallet.NewWalletBalanceProjector(walletRepository, walletRepository, projectionRepo)
 
@@ -88,18 +99,21 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 
 			snsPublisher, pubErr := sns.NewEventPublisher(snsClient, cfg.SNSTopicARN)
 			if pubErr == nil {
-				outboxRepo := postgres.NewOutboxRepository(queries)
+				outboxRepo := postgres.NewOutboxRepository(queries, pool)
 				relay := outbox.NewRelay(
 					outboxRepo,
 					snsPublisher,
 					outbox.RelayConfig{},
 					logger,
+					metrics,
 				)
 				go func() {
 					if err := relay.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
 						logger.Error("outbox_relay_stopped", slog.Any("error", err))
 					}
 				}()
+			} else {
+				logger.Warn("sns_publisher_unavailable", slog.Any("error", pubErr))
 			}
 
 			consumer, consumerErr := sqs.NewProjectionConsumer(
@@ -109,6 +123,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 					QueueURL: cfg.SQSWalletBalanceQueueURL,
 				},
 				logger,
+				metrics,
 			)
 			if consumerErr == nil {
 				go func() {
@@ -116,7 +131,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 						logger.Error("sqs_projection_consumer_stopped", slog.Any("error", err))
 					}
 				}()
+			} else {
+				logger.Warn("sqs_projection_consumer_unavailable", slog.Any("error", consumerErr))
 			}
+		} else {
+			logger.Warn("aws_eventing_unavailable", slog.Any("error", awsErr))
 		}
 
 		walletBalanceUseCase = wallet.NewGetWalletBalanceUseCaseWithProjection(
@@ -131,6 +150,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 			postTransaction,
 		)
 	} else {
+		logger.Warn("dynamodb_projection_unavailable", slog.Any("error", err))
 		walletBalanceUseCase = wallet.NewGetWalletBalanceUseCase(
 			walletRepository,
 			walletRepository,
@@ -154,6 +174,41 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 		holdRepository,
 	)
 
+	holdExpirationWorker := worker.NewHoldExpirationWorker(
+		holdRepository,
+		expireHoldUseCase,
+		worker.HoldExpirationConfig{},
+		logger,
+	)
+	go func() {
+		if err := holdExpirationWorker.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("hold_expiration_worker_stopped", slog.Any("error", err))
+		}
+	}()
+
+	gatewayCB := resilience.NewCircuitBreaker(resilience.Config{
+		Name:             "payment_gateway",
+		FailureThreshold: 3,
+		SuccessThreshold: 2,
+		Timeout:          5 * time.Second,
+		OnStateChange: func(name string, from, to resilience.State) {
+			logger.Warn(
+				"circuit_breaker_state_changed",
+				slog.String("circuit_breaker", name),
+				slog.String("from_state", from.String()),
+				slog.String("to_state", to.String()),
+			)
+			metrics.RecordCircuitBreakerState(name, to.String())
+		},
+	})
+	metrics.RecordCircuitBreakerState("payment_gateway", "closed")
+
+	protectedGateway := gateway.NewCircuitBreakerPaymentGateway(
+		gateway.NewMockPaymentGateway(),
+		gatewayCB,
+		metrics,
+	)
+
 	return &Dependencies{
 		CreateAccount:      account.NewCreateAccountUseCase(accountRepository),
 		CreateWallet:       wallet.NewCreateWalletUseCase(walletRepository),
@@ -170,7 +225,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 			walletRepository,
 			postTransaction,
 		),
-		CreateHold: createHoldUseCase,
+		CreateHold:  createHoldUseCase,
 		ReleaseHold: releaseHoldUseCase,
 		ExpireHold:  expireHoldUseCase,
 		CaptureHold: captureHoldUseCase,
@@ -179,7 +234,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Dependen
 			gateway.NewMockAntiFraudService(),
 			captureHoldUseCase,
 			releaseHoldUseCase,
-			gateway.NewMockPaymentGateway(),
+			protectedGateway,
+			metrics,
 		),
 		PostTransaction:    postTransaction,
 		GetTransaction:     transaction.NewGetTransactionUseCase(transactionRepository),

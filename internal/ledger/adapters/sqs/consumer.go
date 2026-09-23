@@ -9,6 +9,7 @@ import (
 
 	"financial-ledger/internal/ledger/application/wallet"
 	"financial-ledger/internal/ledger/domain"
+	"financial-ledger/internal/platform/observability"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -37,6 +38,7 @@ type ProjectionConsumer struct {
 	projector wallet.BalanceProjector
 	config    ProjectionConsumerConfig
 	logger    *slog.Logger
+	metrics   *observability.Metrics
 }
 
 func NewProjectionConsumer(
@@ -44,7 +46,12 @@ func NewProjectionConsumer(
 	projector wallet.BalanceProjector,
 	cfg ProjectionConsumerConfig,
 	logger *slog.Logger,
+	metrics ...*observability.Metrics,
 ) (*ProjectionConsumer, error) {
+	var collector *observability.Metrics
+	if len(metrics) > 0 {
+		collector = metrics[0]
+	}
 	if client == nil {
 		return nil, fmt.Errorf("sqs client cannot be nil")
 	}
@@ -72,6 +79,7 @@ func NewProjectionConsumer(
 		projector: projector,
 		config:    cfg,
 		logger:    logger,
+		metrics:   collector,
 	}, nil
 }
 
@@ -146,6 +154,9 @@ func (c *ProjectionConsumer) processMessage(ctx context.Context, msg types.Messa
 			slog.String("wallet_id", walletID.String()),
 			slog.String("message_id", aws.ToString(msg.MessageId)),
 		)
+	}
+	if c.metrics != nil {
+		c.metrics.RecordSQSConsumed("wallet-balance-projections", "processed")
 	}
 
 	return nil
