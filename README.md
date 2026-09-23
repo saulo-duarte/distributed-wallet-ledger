@@ -32,7 +32,7 @@ Money is represented as integer minor units (for example, BRL cents), never as `
 - **CQRS (Command Query Responsibility Segregation):** Write model persists durable double-entry entries in PostgreSQL with ACID guarantees, while high-throughput balance queries read from a dedicated DynamoDB projection.
 - **Transactional Outbox Pattern:** Atomic, zero-dual-write event publishing within PostgreSQL transactions (`FOR UPDATE SKIP LOCKED`) combined with full jitter exponential backoff and relay dispatching.
 - **Event-Driven Architecture with SNS + SQS Fanout:** Outbox events publish to an AWS SNS Topic (`ledger-events`), which broadcasts in parallel to dedicated AWS SQS queues with Dead Letter Queues (DLQ) for asynchronous, decoupled consumers.
-- **Resilience & Fallback Projections:** Real-time balance queries read from the DynamoDB projection with optimistic concurrency protection (RFC3339Nano timestamps) and transparent in-flight fallback to PostgreSQL if the read model is temporarily unavailable.
+- **Resilience, Fallbacks & Circuit Breakers:** Native zero-dependency Circuit Breaker state machine (`Closed`, `Open`, `Half-Open`) protecting external dependencies (Payment Gateways) with fail-fast rejections and Prometheus telemetry, alongside real-time balance fallback from DynamoDB to PostgreSQL.
 - **Infrastructure as Code:** Complete local AWS topology (DynamoDB, SNS, SQS, DLQ, Subscriptions) managed with Terraform and Docker Compose.
 
 ## Architecture
@@ -90,7 +90,9 @@ flowchart TD
 - **Phase 3 — CQRS & Read Model:** ✅ Complete (DynamoDB projections with PostgreSQL live fallback)
 - **Phase 4 — Event-Driven Architecture:** ✅ Complete (Transactional Outbox, SNS/SQS Fanout, SQS consumers, DLQ)
 - **Phase 5 — Resilience:** ✅ Complete (Optimistic concurrency/out-of-order protection, full jitter backoff, failure tests)
-- **Phase 6 — Distributed Workflows (Sagas):** 🔄 Active (Payment Saga, Anti-Fraud check, Mock Gateway, Hold Captures & Compensations)
+- **Phase 6 — Distributed Workflows (Sagas):** ✅ Complete (Payment Saga Orchestrator, Anti-Fraud check, Mock Gateway, Hold Captures & Compensations)
+- **Phase 7 — Platform Engineering:** ✅ Complete (Kubernetes, Helm Chart, HPA Autoscaling, PDB, AWS SSM Parameter Store, Chaos Engineering Lab)
+- **Phase 8 — Reliability & Observability:** ✅ Complete (OpenTelemetry Distributed Tracing, Prometheus Metrics, Jaeger UI, Correlation IDs, Structured Slog, Real-Time Terminal Load Generator)
 
 ## Roadmap
 
@@ -98,17 +100,17 @@ flowchart TD
 2. Wallet (Completed)
 3. CQRS Read Model (Completed)
 4. Event Driven & Outbox (Completed)
-5. Resilience (Active)
-6. Distributed Workflows (Sagas)
-7. Platform Engineering (Kubernetes & Helm)
-8. Reliability & Observability (OpenTelemetry & Chaos)
+5. Resilience (Completed)
+6. Distributed Workflows / Sagas (Completed)
+7. Platform Engineering / Kubernetes (Completed)
+8. Reliability & Observability (Completed)
 9. Future: Investments / Brokerage
 
 See the [detailed roadmap](docs/01-product/roadmap.md).
 
 ## Running Locally
 
-Prerequisites: Go, Docker Compose, `sqlc`, and the `golang-migrate` CLI.
+Prerequisites: Go, Docker Compose, Terraform, `sqlc`, and the `golang-migrate` CLI.
 
 ```sh
 copy .env.example .env
@@ -117,7 +119,9 @@ make migrate-up
 make test
 ```
 
-The database runs on `localhost:5432`. To run the real PostgreSQL integration suite, use:
+`make infra-up` starts PostgreSQL and Ministack, then applies the local Terraform
+topology for DynamoDB, SNS, SQS, the wallet projection queue, and its DLQ. The
+database runs on `localhost:5432`. To run the real PostgreSQL integration suite, use:
 
 ```sh
 make test-integration

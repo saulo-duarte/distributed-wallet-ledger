@@ -21,6 +21,7 @@ Thumbs.db
 tmp/
 dist/
 .cache/
+gocache-local/
 
 # Terraform
 **/.terraform/

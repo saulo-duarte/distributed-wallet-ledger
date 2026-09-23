@@ -1,0 +1,14 @@
+.git
+.github
+.vscode
+.idea
+tmp
+bin
+web/
+*.md
+.env*
+docker-compose.yml
+Dockerfile
+terraform
+deploy
+tests

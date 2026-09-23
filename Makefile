@@ -1,8 +1,10 @@
-.PHONY: build test test-all test-unit test-integration test-fuzz test-mutation vet fmt sqlc-generate infra-up infra-down infra-reset compose-up compose-down compose-config migrate-up migrate-down
+.PHONY: build test test-all test-unit test-integration test-fuzz test-mutation vet fmt sqlc-generate infra-up infra-provision infra-down infra-reset compose-up compose-down compose-config migrate-up migrate-down
 
 DATABASE_URL ?= postgres://ledger:ledger@localhost:5432/ledger?sslmode=disable
 MIGRATIONS_PATH ?= migrations
 MIGRATE ?= migrate
+TERRAFORM ?= terraform
+TERRAFORM_DIR ?= terraform/local
 
 build:
 	go build ./...
@@ -35,7 +37,12 @@ sqlc-generate:
 	scripts\sqlc-generate.cmd
 
 infra-up:
-	docker compose up -d --wait postgres
+	docker compose up -d --wait postgres ministack
+	$(MAKE) infra-provision
+
+infra-provision:
+	$(TERRAFORM) -chdir=$(TERRAFORM_DIR) init -backend=false
+	$(TERRAFORM) -chdir=$(TERRAFORM_DIR) apply -auto-approve
 
 infra-down:
 	docker compose down

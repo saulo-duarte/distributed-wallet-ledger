@@ -2,6 +2,15 @@
 
 This directory contains small, repeatable development helpers.
 
+## Local infrastructure
+
+```cmd
+scripts\infra-up.cmd
+```
+
+This starts PostgreSQL and Ministack, then applies the local Terraform topology
+for DynamoDB, SNS, SQS, the wallet projection queue, its DLQ, and SSM parameters.
+
 ## Validation scripts
 
 ### Full local validation

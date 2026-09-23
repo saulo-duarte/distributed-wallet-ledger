@@ -1,4 +1,4 @@
-﻿terraform {
+terraform {
   required_version = ">= 1.5.0"
 
   required_providers {
@@ -21,5 +21,6 @@ provider "aws" {
     dynamodb = var.aws_endpoint
     sns      = var.aws_endpoint
     sqs      = var.aws_endpoint
+    ssm      = var.aws_endpoint
   }
 }

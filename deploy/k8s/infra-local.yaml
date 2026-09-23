@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: goledge
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "ledger"
+            - name: POSTGRES_USER
+              value: "ledger"
+            - name: POSTGRES_PASSWORD
+              value: "ledger"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: goledge
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app.kubernetes.io/name: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ministack
+  namespace: goledge
+  labels:
+    app.kubernetes.io/name: ministack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ministack
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ministack
+    spec:
+      containers:
+        - name: ministack
+          image: ministackorg/ministack:latest
+          ports:
+            - containerPort: 4566
+          env:
+            - name: SERVICES
+              value: "dynamodb,sns,sqs,ssm"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ministack
+  namespace: goledge
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4566
+      targetPort: 4566
+  selector:
+    app.kubernetes.io/name: ministack

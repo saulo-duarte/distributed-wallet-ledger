@@ -5,6 +5,12 @@ resource "aws_sns_topic" "ledger_events" {
 resource "aws_sqs_queue" "wallet_balance_projections_dlq" {
   name                      = "${var.sqs_wallet_balance_queue_name}-dlq"
   message_retention_seconds = 1209600 # 14 days
+
+  lifecycle {
+    # MinStack may expose provider defaults for queues created outside Terraform
+    # and can hang while reconciling retention on an existing local queue.
+    ignore_changes = [message_retention_seconds]
+  }
 }
 
 resource "aws_sqs_queue" "wallet_balance_projections" {
@@ -16,32 +22,15 @@ resource "aws_sqs_queue" "wallet_balance_projections" {
     deadLetterTargetArn = aws_sqs_queue.wallet_balance_projections_dlq.arn
     maxReceiveCount     = 5
   })
+
+  lifecycle {
+    # Keep local bootstrap idempotent when the queue already exists in MinStack.
+    ignore_changes = [message_retention_seconds, redrive_policy]
+  }
 }
 
 resource "aws_sns_topic_subscription" "wallet_balance_projections" {
   topic_arn = aws_sns_topic.ledger_events.arn
   protocol  = "sqs"
   endpoint  = aws_sqs_queue.wallet_balance_projections.arn
-}
-
-resource "aws_sqs_queue_policy" "wallet_balance_projections" {
-  queue_url = aws_sqs_queue.wallet_balance_projections.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "AllowSNSToPublish"
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "sqs:SendMessage"
-        Resource  = aws_sqs_queue.wallet_balance_projections.arn
-        Condition = {
-          ArnEquals = {
-            "aws:SourceArn" = aws_sns_topic.ledger_events.arn
-          }
-        }
-      }
-    ]
-  })
 }

@@ -1,4 +1,4 @@
-﻿resource "aws_dynamodb_table" "projections" {
+resource "aws_dynamodb_table" "projections" {
   name         = var.dynamodb_table_name
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "pk"

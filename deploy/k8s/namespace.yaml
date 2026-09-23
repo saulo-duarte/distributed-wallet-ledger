@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: goledge
+  labels:
+    app.kubernetes.io/name: goledge
+    app.kubernetes.io/part-of: financial-ledger

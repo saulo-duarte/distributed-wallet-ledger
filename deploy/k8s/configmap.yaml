@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: goledge-config
+  namespace: goledge
+  labels:
+    app.kubernetes.io/name: goledge
+    app.kubernetes.io/component: config
+data:
+  API_ADDR: ":8082"
+  API_ADDRESS: ":8082"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  MIGRATIONS_PATH: "migrations"
+  DYNAMODB_TABLE: "goledge_projections"
+  DYNAMODB_ENDPOINT: "http://ministack.goledge.svc.cluster.local:4566"
+  DYNAMODB_REGION: "us-east-1"
+  AWS_ENDPOINT: "http://ministack.goledge.svc.cluster.local:4566"
+  AWS_REGION: "us-east-1"
+  SNS_TOPIC_ARN: "arn:aws:sns:us-east-1:000000000000:ledger-events"
+  SQS_WALLET_BALANCE_QUEUE_URL: "http://ministack.goledge.svc.cluster.local:4566/000000000000/wallet-balance-projections-queue"
+  OTEL_SERVICE_NAME: "goledge-api"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "jaeger.goledge.svc.cluster.local:4317"
+  OTEL_DISABLED: "false"
+  PROMETHEUS_METRICS_ENABLED: "true"
+
