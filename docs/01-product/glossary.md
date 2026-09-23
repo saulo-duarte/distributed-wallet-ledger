@@ -34,7 +34,7 @@ A value derived from an account's postings. A balance is not a mutable replaceme
 
 ## Wallet
 
-The first planned product built on top of the ledger. Wallet behavior is product logic; the ledger records the resulting accounting facts.
+The implemented product boundary built on top of the ledger. Wallet behavior includes deposits, withdrawals, transfers, balances and holds; the ledger records the resulting accounting facts.
 
 ## Idempotency Key
 
@@ -64,4 +64,4 @@ An operational request sent to a payment rail, provider, or settlement operator.
 
 The lifecycle of an external payment instruction, such as `pending`, `submitted`, `settled`, `failed`, or `rejected`. This status is separate from the immutable financial facts recorded in the Ledger.
 
-Future terms such as authorization, hold, capture, settlement, clearing, reconciliation, and chargeback will be added when those concepts enter the implemented scope.
+Authorization, hold and capture are implemented wallet concepts. Settlement, clearing, reconciliation and chargeback remain external-payment concepts outside the current implementation.

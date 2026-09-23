@@ -1,31 +1,54 @@
 # Current Scope
 
-## Phase 1 includes
+This document describes what is implemented in the repository today. The system is a Go modular monolith with PostgreSQL as the financial source of truth and optional local AWS-compatible services for projections and messaging.
 
-- Ledger accounts.
-- Business transactions.
-- Journal entries.
-- Debit and credit postings.
-- Double-entry validation.
-- PostgreSQL as the financial source of truth.
-- SQLC-generated database access.
-- ACID transaction boundaries.
-- Domain unit tests.
-- Integration tests against real PostgreSQL.
-- Reversal through compensating ledger entries.
-- Initial, database-backed idempotency.
+## Ledger
 
-Phase 1 treats all posting account references as local Ledger accounts. External account references, payment instructions, provider responses, settlement, and reconciliation are conceptual only and are not implemented.
+- Ledger accounts, business transactions, journal entries and debit/credit postings.
+- Double-entry validation, positive integer minor units and currency checks.
+- Atomic PostgreSQL transactions with SQLC-generated access code.
+- Immutable posted facts and reversal through new compensating entries.
+- Database-backed idempotency and conflict detection.
+- Account posting queries and transaction details.
 
-## Phase 1 does not include
+## Wallet
 
-- DynamoDB or a distributed CQRS read model.
-- SNS, SQS, Pub/Sub, or distributed event delivery.
-- Kubernetes, Helm, or AWS Terraform.
-- Sagas or distributed workflows.
-- Circuit breakers or cross-service resilience policies.
-- Risk, notification, settlement, or other distributed services.
-- Full event sourcing.
-- External payment providers, payment rails, asynchronous provider status, and inter-institution settlement.
+- Wallet creation and owner queries.
+- Deposits, withdrawals and wallet-to-wallet transfers.
+- Ledger balance and available balance.
+- Authorization holds with release, expiration and capture.
+- PostgreSQL locking to protect funds and prevent concurrent overspending.
 
-Future technologies may appear in the roadmap as planned study topics. Their inclusion is not a current implementation decision.
+## Checkout Saga
+
+- Hold authorization as the first step.
+- Local mock anti-fraud evaluation.
+- Local mock payment-gateway processing protected by a circuit breaker.
+- Hold capture after successful gateway processing.
+- Hold release as compensation after rejection or gateway failure.
+- Deterministic server-generated IDs for safe retries with the same idempotency key.
+
+## Event-driven read model
+
+- Transactional outbox records events in the same PostgreSQL transaction as the financial write.
+- Relay with retry backoff and claim protection for concurrent workers.
+- SNS publication and SQS projection consumption.
+- DynamoDB wallet-balance projection with conditional ordering protection.
+- PostgreSQL fallback when a projection is unavailable or stale.
+
+## Platform and reliability
+
+- Structured request logging with request and trace IDs.
+- Prometheus metrics and OpenTelemetry tracing with Jaeger support.
+- Circuit-breaker state and Saga/outbox/SQS metrics.
+- Docker Compose and Terraform for local dependencies.
+- Kubernetes and Helm deployment manifests with HPA, PDB and observability resources.
+- A PowerShell Kubernetes lab and a Go load generator with stored reports.
+
+## Explicitly outside the current scope
+
+- Real external payment providers, payment rails, callbacks and settlement.
+- External account ownership, reconciliation and chargeback operations.
+- User authentication, authorization and tenancy isolation.
+- Multi-currency conversion and foreign-exchange accounting.
+- Full event sourcing and independently deployable microservices.

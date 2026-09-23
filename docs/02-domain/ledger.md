@@ -6,7 +6,7 @@ The Ledger is an append-oriented record of financial facts. It contains accounts
 
 ## Why it is the source of truth
 
-Balances and product views can be derived from postings. The ledger is therefore the authoritative record for what was posted, when it was posted, and which accounts participated. A balance field or future read model may be a projection, but it must not silently replace the accounting history.
+Balances and product views can be derived from postings. The ledger is therefore the authoritative record for what was posted, when it was posted, and which accounts participated. The DynamoDB balance read model is a projection and must not silently replace the accounting history.
 
 ## Why it is immutable
 
@@ -39,10 +39,10 @@ Credit EXTERNAL_CLEARING  BRL 100.00
 
 The external destination is associated with a separate payment instruction. A payment rail, provider, or authorized settlement operator may later accept, reject, or settle that instruction. This integration result is operational state; it is not a replacement for, or mutation of, the original journal entry.
 
-If the external operation fails after the local posting, the correction is another balanced compensating entry. If the business must wait for authorization before moving funds, the Wallet can reserve funds with a hold and later capture them through a final balanced Ledger entry. Provider authorization and distributed settlement workflows remain future concerns.
+If the external operation fails after the local posting, the correction is another balanced compensating entry. If the business must wait for authorization before moving funds, the Wallet reserves funds with a hold and later captures them through a final balanced Ledger entry. The current checkout uses this hold shape with local mock services; real provider authorization and distributed settlement remain outside the repository.
 
-This external payment flow is planned for later phases. Phase 1 models only local Ledger accounts and does not implement providers, queues, settlement, or reconciliation.
+The current repository models only local Ledger accounts and does not implement external providers, settlement or reconciliation. Its SNS/SQS infrastructure is used for internal wallet projection events, not for a real payment rail.
 
 ## Money representation
 
-The domain should introduce a small `Money` value object when implementation begins. It should keep a positive integer amount in minor units together with a currency and expose operations that preserve currency and overflow rules. PostgreSQL stores the amount as `BIGINT` and the currency on the journal entry; adapters map between database rows and domain values. This keeps financial code safer than passing a naked `int64` everywhere while avoiding decimal or floating-point arithmetic.
+The domain uses a `Money` value object that keeps a positive integer amount in minor units together with a currency and exposes operations that preserve currency and overflow rules. PostgreSQL stores the amount as `BIGINT` and the currency on the journal entry; adapters map between database rows and domain values. This keeps financial code safer than passing a naked `int64` everywhere while avoiding decimal or floating-point arithmetic.

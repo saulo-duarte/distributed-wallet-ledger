@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The Ledger records financial facts controlled by our institution. A transfer may have a destination at another bank or financial institution, but our system does not own that institution's accounts, balances, or internal state.
+The Ledger records financial facts controlled by our institution. A transfer may have a destination at another bank or financial institution, but our system does not own that institution's accounts, balances or internal state. The current checkout flow uses a recipient value and mock gateway only; it does not model a real external account or payment rail.
 
 Treating every external destination as a local `Account` would incorrectly suggest that our Ledger can validate or mutate an account it does not control. It would also mix accounting facts with payment-network integration data.
 
@@ -16,7 +16,7 @@ Keep `AccountID` in a `Posting` limited to accounts owned by the local Ledger. R
 
 The external payment instruction has its own operational lifecycle, such as `pending`, `submitted`, `settled`, `failed`, or `rejected`. Its status is separate from the immutable financial facts in the Ledger.
 
-If an external failure requires a financial correction after a local posting, create a new balanced compensating entry. Do not update or delete the original postings. If funds must not move before external authorization, introduce holds or authorization/capture semantics in a later product or workflow phase.
+If an external failure requires a financial correction after a local posting, create a new balanced compensating entry. Do not update or delete the original postings. If funds must not move before external authorization, use the implemented wallet hold and authorization/capture semantics while keeping the external payment instruction separate.
 
 ## Alternatives Considered
 
@@ -38,7 +38,7 @@ Accepted. This preserves the boundary between local financial facts and external
 
 - The Ledger has a clear ownership boundary.
 - External account data cannot be mistaken for local balance state.
-- Payment-provider integration can evolve independently from accounting rules.
+- The mock checkout can be replaced by payment-provider integration without changing accounting rules.
 - Asynchronous responses can update operational state without mutating posted financial facts.
 - Reconciliation and compensating entries have explicit places in the future model.
 

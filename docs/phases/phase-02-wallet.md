@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build the first product on top of the Ledger while keeping the Ledger as the financial source of truth.
+Build the Wallet product on top of the Ledger while keeping the Ledger as the financial source of truth.
 
 ## Implemented scope
 
@@ -39,7 +39,7 @@ POST /holds/{holdID}/capture
 
 Capture coordinates the final Ledger posting and the hold state transition in the same PostgreSQL transaction. It uses a deterministic lock order, validates the authorized and non-expired state, and reuses the Ledger idempotency record so a retry does not create duplicate postings.
 
-The future distributed-workflow phase may still add provider authorization, settlement callbacks, compensation, and messaging. Those concerns are not implemented here.
+The repository now includes a separate local checkout Saga that uses these hold semantics. It coordinates mock anti-fraud, a mock payment gateway, capture and compensation; real provider authorization, settlement callbacks and reconciliation remain outside the current scope.
 
 ## Testing
 
@@ -65,4 +65,4 @@ Phase 2 is complete when:
 - capture atomically creates the Ledger postings and marks the hold as captured;
 - invalid, expired, duplicated, and conflicting operations return explicit domain/application errors;
 - unit, HTTP, and PostgreSQL integration tests cover the implemented wallet flows, including concurrency and rollback scenarios;
-- the current API and architecture are documented without claiming future distributed infrastructure as implemented.
+- wallet behavior is documented separately from the local checkout Saga and from derived messaging infrastructure.

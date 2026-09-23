@@ -6,17 +6,17 @@ Accepted
 
 ## Context
 
-The Phase 1 ledger needs durable accounting facts with atomic multi-row writes, consistency checks, unique constraints, foreign keys, and predictable transaction semantics. The project is also intentionally starting as a modular monolith so that domain and persistence behavior can be understood before distributed infrastructure is introduced.
+The ledger needs durable accounting facts with atomic multi-row writes, consistency checks, unique constraints, foreign keys and predictable transaction semantics. The application now also has derived projections and asynchronous integrations, so the system needs one unambiguous financial source of truth.
 
 ## Decision
 
-Use PostgreSQL as the financial source of truth for the Phase 1 Ledger. Persist transactions, journal entries, postings, accounts, and initial idempotency records in PostgreSQL. Keep SQL explicit and access it through SQLC-generated code in the PostgreSQL adapter.
+Use PostgreSQL as the financial source of truth for the ledger and wallet. Persist transactions, journal entries, postings, accounts, wallets, holds, outbox events and idempotency records in PostgreSQL. Keep SQL explicit and access it through SQLC-generated code in the PostgreSQL adapter. DynamoDB projections and SNS/SQS messages are derived from committed PostgreSQL state.
 
 ## Alternatives Considered
 
 ### DynamoDB
 
-DynamoDB can be an excellent choice for high-scale access patterns and is a likely candidate for a future CQRS read model. At this stage, the ledger's primary challenge is relational integrity and atomic accounting across related rows, not independent key-value read scaling. Choosing it as the source of truth now would make the intended consistency and relational invariants less direct to express.
+DynamoDB is used for the wallet-balance read projection, but not as the source of truth. Choosing it for the accounting write model would make relational integrity and atomic accounting across related rows less direct to express.
 
 ### Event store
 
@@ -24,7 +24,7 @@ An event store could support event sourcing and replay. Full event sourcing is a
 
 ### PostgreSQL
 
-PostgreSQL provides ACID transactions, foreign keys, unique constraints, check constraints, mature operational tooling, and clear SQL for the relational shape of a double-entry ledger. It is a strong fit for learning and for the current consistency boundary without preventing future projections or integrations.
+PostgreSQL provides ACID transactions, foreign keys, unique constraints, check constraints, mature operational tooling and clear SQL for the relational shape of a double-entry ledger. It remains a strong fit for the current consistency boundary while supporting the outbox and derived projections.
 
 ## Consequences
 
@@ -34,7 +34,7 @@ PostgreSQL provides ACID transactions, foreign keys, unique constraints, check c
 - Relational integrity is explicit and close to the data.
 - SQL remains inspectable and SQLC avoids ORM behavior being hidden.
 - Local development and integration testing are straightforward with Docker.
-- A later read model can consume or rebuild from PostgreSQL-backed ledger data.
+- DynamoDB, SNS and SQS can be rebuilt or replayed from PostgreSQL-backed events without becoming financial authorities.
 
 ### Negative
 

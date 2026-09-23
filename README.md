@@ -5,134 +5,178 @@
 </p>
 
 <p align="center">
-  Event-driven financial ledger and wallet platform built with Go, PostgreSQL, DynamoDB, SNS/SQS and Kubernetes.
+  A Go backend for wallets, double-entry accounting and event-driven payment workflows.
 </p>
 
-## Overview
+Distributed Wallet Ledger is a modular monolith that exposes a financial HTTP API and keeps PostgreSQL as the authoritative ledger. It supports wallet operations, reservations, idempotent retries, simulated payment orchestration, asynchronous balance projections and production-oriented observability.
 
-Distributed Wallet Ledger is an educational platform for studying reliable financial systems. It starts with a small, explicit double-entry ledger and evolves only when a concrete problem justifies a new architectural pattern.
+The project is designed as a practical backend and architecture case study: the accounting rules are explicit, financial facts are immutable, and every additional distributed component has a concrete responsibility.
 
-The first product built on top of the platform will be a Wallet. The ledger remains the financial source of truth so that future products such as investments, brokerage, payments, or settlement can reuse the same accounting foundation.
+## What it does
 
-## Goals
+- Records balanced double-entry transactions with immutable postings and compensating reversals.
+- Creates wallets and supports deposits, withdrawals, wallet-to-wallet transfers and balance queries.
+- Separates ledger balance from available balance through authorization holds.
+- Authorizes, releases, expires and captures holds with PostgreSQL locking and idempotency.
+- Runs a payment checkout Saga with hold authorization, mock anti-fraud, a mock gateway, capture and compensation.
+- Publishes wallet events through a transactional outbox and SNS/SQS fanout.
+- Maintains a DynamoDB wallet-balance projection while retaining PostgreSQL as the source of truth.
+- Falls back to PostgreSQL for balance reads when the projection is unavailable or a strong read is requested.
+- Exposes Prometheus metrics, OpenTelemetry traces, structured logs, request/trace IDs and circuit-breaker telemetry.
+- Includes Docker Compose, Terraform, Kubernetes/Helm manifests, a load generator and a small architecture/Saga dashboard.
 
-- Build a correct and auditable financial ledger.
-- Learn financial-domain modeling through working software.
-- Explore architecture, consistency, concurrency, resilience, observability, and infrastructure incrementally.
-- Make tradeoffs and architectural decisions visible enough for study, interviews, and portfolio discussions.
+The payment flow is intentionally simulated with local anti-fraud and gateway adapters. The repository does not connect to a real payment rail, bank or external settlement provider.
 
-## What This Project Explores
+## Stack
 
-The roadmap includes Go, pragmatic Domain-Driven Design, hexagonal architecture, double-entry bookkeeping, PostgreSQL, SQLC, ACID transactions, idempotency, CQRS, event-driven integration, resilience, distributed workflows, observability, and platform engineering.
-
-These are learning destinations, not a checklist. A technology or pattern is introduced only when the current design exposes a problem that it can solve.
-
-## Domain
-
-The initial domain is a financial ledger composed of accounts, business transactions, journal entries, and debit/credit postings. Every posted journal entry must balance: total debits equal total credits. Posted financial facts are immutable; corrections are represented by reversal entries.
-
-Money is represented as integer minor units (for example, BRL cents), never as `float64`.
-
-## Architectural Patterns & Highlights
-
-- **Hexagonal Architecture (Ports and Adapters):** Strict domain isolation where business rules, accounts, and financial invariants are completely agnostic of database, transport, or cloud providers.
-- **Distributed Workflows & Saga Pattern:** Orchestrated multi-step payment execution (`Authorize Hold` -> `Anti-Fraud Check` -> `External Payment Gateway` -> `Capture Hold` / `Compensate Release`) guaranteeing eventual consistency without distributed locks.
-- **CQRS (Command Query Responsibility Segregation):** Write model persists durable double-entry entries in PostgreSQL with ACID guarantees, while high-throughput balance queries read from a dedicated DynamoDB projection.
-- **Transactional Outbox Pattern:** Atomic, zero-dual-write event publishing within PostgreSQL transactions (`FOR UPDATE SKIP LOCKED`) combined with full jitter exponential backoff and relay dispatching.
-- **Event-Driven Architecture with SNS + SQS Fanout:** Outbox events publish to an AWS SNS Topic (`ledger-events`), which broadcasts in parallel to dedicated AWS SQS queues with Dead Letter Queues (DLQ) for asynchronous, decoupled consumers.
-- **Resilience, Fallbacks & Circuit Breakers:** Native zero-dependency Circuit Breaker state machine (`Closed`, `Open`, `Half-Open`) protecting external dependencies (Payment Gateways) with fail-fast rejections and Prometheus telemetry, alongside real-time balance fallback from DynamoDB to PostgreSQL.
-- **Infrastructure as Code:** Complete local AWS topology (DynamoDB, SNS, SQS, DLQ, Subscriptions) managed with Terraform and Docker Compose.
+| Area | Technologies |
+| --- | --- |
+| Language and HTTP | Go, `net/http`, `chi` |
+| Accounting store | PostgreSQL 16, `pgx/v5`, SQLC, `golang-migrate` |
+| Domain model | Double-entry ledger, integer minor units, idempotency, holds and reversals |
+| Read model | DynamoDB projection with PostgreSQL fallback |
+| Messaging | SNS topic, SQS projection queue, DLQ and transactional outbox |
+| Resilience | Exponential backoff with jitter, circuit breaker and concurrency-safe PostgreSQL operations |
+| Observability | Prometheus, OpenTelemetry, Jaeger and structured `slog` logs |
+| Local infrastructure | Docker Compose, MiniStack and Terraform |
+| Deployment assets | Kubernetes, Helm, HPA, PDB and optional SSM-backed configuration |
 
 ## Architecture
 
+The application is a modular monolith with feature-oriented packages. The domain does not depend on HTTP, PostgreSQL, AWS or frameworks. Adapters translate external protocols and persistence representations at the boundary.
+
 ```mermaid
 flowchart LR
-    client[HTTP client] -->|checkout request| saga[Payment Saga]
+    client[HTTP client] --> api[Go HTTP API]
+    api --> ledger[Ledger use cases]
+    api --> saga[Payment Saga]
 
-    saga -->|authorize| hold[Wallet hold]
-    saga -->|evaluate| fraud[Anti-fraud service]
-    saga -->|process| gateway[Payment gateway]
-    saga -->|capture| ledger[PostgreSQL double-entry ledger]
+    ledger --> postgres[(PostgreSQL ledger)]
+    saga --> hold[Authorize or capture hold]
+    saga --> fraud[Mock anti-fraud]
+    saga --> gateway[Mock payment gateway]
+    hold --> postgres
+    fraud -.->|rejected| release[Compensate: release hold]
+    gateway -.->|failed| release
+    release --> postgres
 
-    fraud -.->|rejected| release[Release hold]
-    gateway -.->|declined or timeout| release
-    release --> outbox[Transactional outbox]
-    hold --> outbox
-    ledger --> outbox
+    postgres -->|transactional event| outbox[Outbox relay]
+    outbox -->|publish| sns[SNS ledger-events]
+    sns --> sqs[SQS projection queue]
+    sqs -.->|after retries| dlq[SQS dead-letter queue]
+    sqs --> consumer[Projection consumer]
+    consumer --> dynamo[(DynamoDB balance projection)]
+    client -->|balance query| dynamo
+    dynamo -.->|projection miss or strong read| postgres
 
-    outbox -->|publish events| sns[SNS ledger-events topic]
-    sns -->|fanout| projectionQueue[SQS projection queue]
-    sns -->|fanout| auditQueue[SQS audit queue]
-    projectionQueue -.->|after retries| dlq[SQS dead-letter queue]
-
-    projectionQueue -->|long polling| consumer[Projection consumer]
-    consumer -->|conditional update| dynamo[DynamoDB balance projection]
-    client -->|read balance| dynamo
-    dynamo -.->|strong-consistency fallback| ledger
+    api --> metrics[Prometheus metrics]
+    api --> tracing[OpenTelemetry traces]
 ```
 
-## Technology Stack
+### Accounting boundary
 
-- **Go 1.25+** (Standard library, `chi` router, AWS SDK v2, `pgx/v5`)
-- **PostgreSQL 16** (ACID double-entry ledger & transactional outbox)
-- **SQLC** (Type-safe SQL queries)
-- **AWS DynamoDB** (CQRS read model projections with optimistic concurrency)
-- **AWS SNS + SQS** (Pub/Sub Fanout messaging with DLQ)
-- **Terraform** (Infrastructure as Code for local and cloud environments)
-- **Ministack / Docker Compose** (Deterministic local AWS emulation)
-- **golang-migrate** (Database versioning and schema migrations)
+PostgreSQL stores the financial facts: accounts, transactions, journal entries, postings, wallets, holds and idempotency records. A journal entry is accepted only when its debit and credit postings balance. Posted facts are not edited or deleted; corrections are new balanced transactions.
 
-## Current Status
+Money is represented as integer minor units, such as cents, never as floating-point values.
 
-- **Phase 1 — Ledger Core:** ✅ Complete (Double-entry accounting, ACID postings, immutability, idempotency)
-- **Phase 2 — Wallet:** ✅ Complete (Deposits, withdrawals, transfers, authorizations, and holds)
-- **Phase 3 — CQRS & Read Model:** ✅ Complete (DynamoDB projections with PostgreSQL live fallback)
-- **Phase 4 — Event-Driven Architecture:** ✅ Complete (Transactional Outbox, SNS/SQS Fanout, SQS consumers, DLQ)
-- **Phase 5 — Resilience:** ✅ Complete (Optimistic concurrency/out-of-order protection, full jitter backoff, failure tests)
-- **Phase 6 — Distributed Workflows (Sagas):** ✅ Complete (Payment Saga Orchestrator, Anti-Fraud check, Mock Gateway, Hold Captures & Compensations)
-- **Phase 7 — Platform Engineering:** ✅ Complete (Kubernetes, Helm Chart, HPA Autoscaling, PDB, AWS SSM Parameter Store, Chaos Engineering Lab)
-- **Phase 8 — Reliability & Observability:** ✅ Complete (OpenTelemetry Distributed Tracing, Prometheus Metrics, Jaeger UI, Correlation IDs, Structured Slog, Real-Time Terminal Load Generator)
+### Read and event boundary
 
-## Roadmap
+The write path commits ledger changes and outbox events in PostgreSQL. The relay publishes those events to SNS, and the SQS consumer updates the DynamoDB wallet projection with ordering and conditional-write protection. The projection is a read optimization, not a second financial source of truth.
 
-1. Ledger Core (Completed)
-2. Wallet (Completed)
-3. CQRS Read Model (Completed)
-4. Event Driven & Outbox (Completed)
-5. Resilience (Completed)
-6. Distributed Workflows / Sagas (Completed)
-7. Platform Engineering / Kubernetes (Completed)
-8. Reliability & Observability (Completed)
-9. Future: Investments / Brokerage
+### Payment boundary
 
-See the [detailed roadmap](docs/01-product/roadmap.md).
+Checkout is an orchestrated Saga over local components. It coordinates a hold, anti-fraud decision, gateway result and capture. Failures compensate the hold when possible. The gateway and anti-fraud implementations are mocks so the workflow can be tested without external credentials or payment networks.
 
-## Running Locally
+## API surface
 
-Prerequisites: Go, Docker Compose, Terraform, `sqlc`, and the `golang-migrate` CLI.
+### Health and observability
+
+```text
+GET  /health
+GET  /health/live
+GET  /health/ready
+GET  /metrics
+```
+
+### Ledger
+
+```text
+POST /accounts
+POST /transactions
+GET  /transactions/{transactionID}
+GET  /accounts/{accountID}/entries
+POST /transactions/{transactionID}/reversal
+```
+
+### Wallets and funds
+
+```text
+POST /wallets
+GET  /wallets/{walletID}
+GET  /owners/{ownerID}/wallets
+GET  /wallets/{walletID}/balance
+POST /wallets/{walletID}/deposits
+POST /wallets/{walletID}/withdrawals
+POST /wallets/{walletID}/transfers
+```
+
+### Holds and checkout
+
+```text
+POST /wallets/{walletID}/holds
+POST /holds/{holdID}/release
+POST /holds/{holdID}/expire
+POST /holds/{holdID}/capture
+POST /payments/checkout
+```
+
+Financial write operations accept `Idempotency-Key` where applicable. Balance reads use the projection by default; `GET /wallets/{walletID}/balance?consistency=strong` reads directly from the ledger.
+
+## Run locally
+
+### Prerequisites
+
+Go, Docker Compose, Terraform, `sqlc` and the `golang-migrate` CLI.
+
+### Start the dependencies
 
 ```sh
 copy .env.example .env
 make infra-up
 make migrate-up
-make test
 ```
 
-`make infra-up` starts PostgreSQL and Ministack, then applies the local Terraform
-topology for DynamoDB, SNS, SQS, the wallet projection queue, and its DLQ. The
-database runs on `localhost:5432`. To run the real PostgreSQL integration suite, use:
+`make infra-up` starts:
+
+- PostgreSQL on `localhost:5432`;
+- MiniStack on `localhost:4566` with DynamoDB, SNS, SQS and SSM;
+- the local Terraform resources for the projection table, topic, queue, DLQ and subscriptions.
+
+Optional local observability services are available through Docker Compose:
+
+- Jaeger UI: `http://localhost:16686`;
+- Prometheus: `http://localhost:9090`.
+
+### Run the API
 
 ```sh
+go run ./cmd/api
+```
+
+The API listens on `http://localhost:8080` by default.
+
+### Validate the project
+
+```sh
+make test
+make vet
+make build
 make test-integration
 ```
 
-This starts PostgreSQL, waits for its healthcheck, applies migrations, and runs tests with the `integration` build tag. The `migrate` CLI must be available on `PATH`.
+The integration suite uses the real PostgreSQL service and is isolated behind the `integration` build tag. More validation helpers are documented in [scripts/README.md](scripts/README.md).
 
-The API command initializes configuration and dependency injection, starts the HTTP server, and exposes the current Ledger Core and Wallet endpoints.
-
-Useful commands are documented in the [local development guide](docs/README.md).
-
-## Repository Structure
+## Repository structure
 
 ```text
 cmd/                         application entrypoints and load generator
@@ -148,21 +192,12 @@ deploy/                      Kubernetes, Helm, and Prometheus manifests
 web/                         architecture and Saga visualization dashboard
 reports/                     load-test reports and reliability evidence
 assets/                      repository presentation assets
-infra/                       reserved for infrastructure experiments when needed
-observability/               reserved for observability configuration when needed
+terraform/local/             local AWS-compatible resources
 ```
 
 ## Documentation
 
-Start at [docs/README.md](docs/README.md). The current scope is in [Phase 2](docs/phases/phase-02-wallet.md), and the initial architecture decision is [ADR 0001](docs/adr/0001-postgresql-as-ledger-source-of-truth.md).
-
-## Architecture Decisions
-
-Architecture decisions are recorded in [docs/adr](docs/adr/README.md). Future technologies are described as planned possibilities, not current commitments.
-
-## Testing
-
-Domain and configuration unit tests run without infrastructure. Integration tests use the real PostgreSQL instance managed by Docker Compose and are isolated behind the `integration` build tag. PostgreSQL is not mocked in integration tests.
+Start at the [documentation index](docs/README.md), then read the [current scope](docs/01-product/scope.md), [current architecture](docs/03-architecture/overview.md), [domain overview](docs/02-domain/overview.md) and [ADR index](docs/adr/README.md).
 
 ## Disclaimer
 
